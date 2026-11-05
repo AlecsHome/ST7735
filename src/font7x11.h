@@ -210,17 +210,4 @@ const unsigned char Font7x11[] FONT_PGM = {
   0x00, 0x00, 0x00, 0x3e, 0x21, 0x3e, 0x24, 0x22, 0x21, 0x00, 0x00,  // [191] 0xFF (255) 'я'
 };
 
-/* Дескриптор шрифта для ST7735::setFont(&font7x11) */
-const st7735_font_t font7x11 = {
-  Font7x11,   // data (указатель на массив)
-  7,          // w (ширина клетки)
-  11,         // h (высота клетки)
-  1,          // bpc
-  1,          // flags: 1 = row-major
-  0x20,       // first (ASCII 32)
-  96,         // count (96 глифов диапазона 1)
-  0xA0,       // first2 (CP1251 160)
-  96          // count2 (96 глифов диапазона 2)
-};
-
 #endif /* _FONT7X11_H_ */
