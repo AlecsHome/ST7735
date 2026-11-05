@@ -444,8 +444,12 @@ private:
 
         /* Проверка изменения масштаба */
         const bool scaleChanged = (_prevScale != 0 && effScale != _prevScale);
+        /* Выравнивание в условие НЕ входит: drawStringAligned всегда заливает
+         * всю ширину _w, поэтому для CENTER/RIGHT повторная отрисовка при
+         * неизменном тексте не нужна (раньше такие виджеты никогда не попадали
+         * под skip-redraw ниже). */
         const bool forceFull = (!_prevValid || isError != _prevWasError ||
-                                _align != ST7735_ALIGN_LEFT || scaleChanged);
+                                scaleChanged);
 
         /* Skip-redraw оптимизация: если _cur, effScale, isError, fg не изменились
          * с прошлой перерисовки — пропускаем SPI-трафик целиком. Это критично
@@ -795,9 +799,9 @@ public:
         _tft.startWrite();
         _tft.drawRect(_x, _y, _w, _h, _borderColor);
         _visible = true;
-        redrawGraph();
+        invalidate();   /* экран мог быть перезаписан — кэш кадра устарел: ДО redrawGraph */
+        redrawGraph();  /* полный кадр, затем кэш заново сохраняется */
         _tft.endWrite();
-        invalidate();   /* экран перезаписан — кэш кадра устарел */
     }
 
     /* Принудительный сброс кэша инкрементального вывода — БЕЗ перерисовки.
