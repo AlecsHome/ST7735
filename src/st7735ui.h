@@ -308,7 +308,7 @@ public:
           _align(align), _fg(fg), _bg(bg),
           _scale(scale ? scale : 1), _autoScale(autoScale),
           _prevValid(false), _prevWasError(false),
-          _prevScale(0), _prevFg(0), _errFg(ST7735_RED), _digits(2),
+          _prevScale(0), _prevFg(0), _prevFont(nullptr), _errFg(ST7735_RED), _digits(2),
           _type(VT_NONE), _lastV(0.0) {
         _cur[0] = 0;
         _prev[0] = 0;
@@ -444,22 +444,30 @@ private:
 
         /* Проверка изменения масштаба */
         const bool scaleChanged = (_prevScale != 0 && effScale != _prevScale);
-        /* Выравнивание в условие НЕ входит: drawStringAligned всегда заливает
-         * всю ширину _w, поэтому для CENTER/RIGHT повторная отрисовка при
-         * неизменном тексте не нужна (раньше такие виджеты никогда не попадали
-         * под skip-redraw ниже). */
+        /* forceFull: нужно ли перерисовать с очисткой хвоста по высоте.
+         * Выравнивание (align) в условие НЕ входит — drawStringAligned всегда
+         * заливает всю ширину _w, поэтому CENTER/RIGHT при неизменном тексте
+         * не требуют полной перерисовки. skip-redraw ниже перехватит этот случай. */
         const bool forceFull = (!_prevValid || isError != _prevWasError ||
                                 scaleChanged);
 
-        /* Skip-redraw оптимизация: если _cur, effScale, isError, fg не изменились
-         * с прошлой перерисовки — пропускаем SPI-трафик целиком. Это критично
-         * для polling-датчиков (ADS1115, термопары): value.set(12.45) × 100
-         * раз в секунду — теперь рисуется 1 раз, а не 100. Сравниваем уже
-         * ОТФОРМАТИРОВАННУЮ строку (а не double) — так «12.454» и «12.455»
-         * при digits=2 дают «12.45»/«12.46» — разные, а «12.4541»/«12.4542»
-         * дают «12.45»/«12.45» — skip срабатывает. */
+        /* Skip-redraw оптимизация: если _cur, effScale, isError, fg, align, bg
+         * не изменились с прошлой перерисовки — пропускаем SPI-трафик целиком.
+         * Работает для ВСЕХ выравниваний (LEFT, CENTER, RIGHT) —
+         * drawStringAligned при неизменных входных данных даёт тот же результат.
+         * Критично для polling-датчиков (ADS1115, термопары): value.set(12.45)
+         * × 100 раз в секунду — теперь рисуется 1 раз, а не 100.
+         * Сравниваем ОТФОРМАТИРОВАННУЮ строку: «12.454» и «12.455» при
+         * digits=2 дают «12.45»/«12.46» — разные, а «12.4541»/«12.4542»
+         * дают «12.45»/«12.45» — skip срабатывает.
+         *
+         * Также проверяем смену шрифта: если _tft.font() изменился (через
+         * _tft.setFont), предыдущая отрисовка была другим шрифтом — кэш
+         * недействителен, пропустить нельзя. _prevFont хранит указатель
+         * шрифта прошлой отрисовки. */
         if (_prevValid && !forceFull && effScale == _prevScale &&
             isError == _prevWasError && fg == _prevFg &&
+            _tft.font() == _prevFont &&
             strcmp(_cur, _prev) == 0) {
             return;
         }
@@ -484,6 +492,7 @@ private:
         _prevWasError = isError;
         _prevScale = effScale;
         _prevFg = fg;
+        _prevFont = _tft.font();  /* запоминаем шрифт для skip-redraw */
         strcpy(_prev, _cur);          /* кэш для skip-redraw проверки */
     }
 
@@ -499,6 +508,7 @@ private:
     bool _prevWasError;
     uint8_t _prevScale;
     uint16_t _prevFg;                  /* для skip-redraw: прошлый fg/isError-цвет */
+    const st7735_font_t *_prevFont;   /* для skip-redraw: прошлый шрифт */
     uint16_t _errFg;
     uint8_t _digits;
     char _prev[24];                    /* для skip-redraw: прошлая отформатированная строка */
@@ -793,13 +803,15 @@ public:
     }
 
     /* Показать окно: рамка + график. Внутренность (фон, сетка, линия) пишется
-     * ОДНИМ потоком — предварительная заливка fillRect не нужна, мерцания нет. */
+     * ОДНИМ потоком — предварительная заливка fillRect не нужна, мерцания нет.
+     * invalidate() — самой первой строкой, до startWrite/drawRect: кэш
+     * недействителен, redrawGraph() сделает полный кадр. */
     void show() {
         if (_w < 10 || _h < 10) return;
+        invalidate();   /* экран мог быть перезаписан — кэш кадра устарел */
         _tft.startWrite();
         _tft.drawRect(_x, _y, _w, _h, _borderColor);
         _visible = true;
-        invalidate();   /* экран мог быть перезаписан — кэш кадра устарел: ДО redrawGraph */
         redrawGraph();  /* полный кадр, затем кэш заново сохраняется */
         _tft.endWrite();
     }
