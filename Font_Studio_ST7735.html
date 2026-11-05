@@ -1,0 +1,2323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="artifact-type" content="tool">
+  <meta name="design-style" content="aurora">
+  <title>Редактор шрифтов ST7735 (7x11 и 5x7)</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Instrument+Sans:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@1.43.0/dist/umd/lucide.min.js"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+
+      /* Aurora Dark Palette */
+      --background: #0c1214;
+      --surface-container-low: #111a1e;
+      --surface-container: #152024;
+      --surface-container-high: #1c2a30;
+      --surface-container-highest: #253840;
+
+      --on-surface: #edf3f5;
+      --on-surface-variant: #94a8b0;
+
+      --outline: #38515c;
+      --outline-variant: #213138;
+
+      --primary: #63c7d6;
+      --on-primary: #081214;
+      --primary-container: #163840;
+      --on-primary-container: #c7f0f7;
+
+      --secondary: #5d7882;
+      --tertiary: #87d69b;
+      --on-tertiary: #081a0e;
+      --error: #f27474;
+      --on-error: #1a0606;
+
+      --positive: #87d69b;
+      --warning: #e8b954;
+      --focus: #63c7d6;
+
+      /* ST7735 TFT Preview Theme Tokens */
+      --tft-bg: #000000;
+      --tft-fg: #ffe600;
+
+      /* Fonts */
+      --font-headline: 'Instrument Sans', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+      --font-label: 'Geist Mono', monospace;
+
+      /* Shapes & Effects */
+      --rounded-sm: 0.25rem;
+      --rounded: 0.5rem;
+      --rounded-lg: 0.75rem;
+      --rounded-full: 9999px;
+
+      --hairline: 1px solid var(--outline-variant);
+      --hairline-strong: 1px solid var(--outline);
+      --panel-gradient: linear-gradient(180deg, #162226 0%, #111a1e 100%);
+      --heading-tracking: -0.025em;
+      --label-tracking: 0.05em;
+
+      /* Spacing Scale */
+      --space-xs: 0.25rem;
+      --space-sm: 0.5rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2.5rem;
+      --space-2xl: 4rem;
+
+      /* Transitions */
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur-micro: 120ms;
+      --dur-short: 200ms;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      background-color: var(--background);
+      color: var(--on-surface);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: clip;
+    }
+
+    /* Accessibility focus */
+    :focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    button, input, select, textarea {
+      font-family: inherit;
+      color: inherit;
+    }
+
+    /* App Shell */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      max-width: 1720px;
+      margin: 0 auto;
+      padding: var(--space-md) var(--space-lg);
+      gap: var(--space-md);
+    }
+
+    /* Header */
+    .app-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-md);
+      padding: var(--space-md) var(--space-lg);
+      background: var(--panel-gradient);
+      border: var(--hairline);
+      border-radius: var(--rounded-lg);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .brand-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--rounded);
+      background: var(--primary-container);
+      color: var(--primary);
+      border: 1px solid rgba(99, 199, 214, 0.25);
+    }
+
+    .brand-titles h1 {
+      font-family: var(--font-headline);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: var(--heading-tracking);
+      color: var(--on-surface);
+      line-height: 1.2;
+    }
+
+    .brand-titles p {
+      font-size: 0.8125rem;
+      color: var(--on-surface-variant);
+    }
+
+    .header-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    .control-label {
+      font-family: var(--font-label);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: var(--label-tracking);
+      color: var(--on-surface-variant);
+    }
+
+    .segmented-control {
+      display: inline-flex;
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .seg-btn {
+      background: transparent;
+      border: none;
+      color: var(--on-surface-variant);
+      padding: 6px 14px;
+      font-family: var(--font-label);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      border-radius: calc(var(--rounded) - 2px);
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .seg-btn:hover {
+      color: var(--on-surface);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .seg-btn.active {
+      background: var(--primary);
+      color: var(--on-primary);
+      font-weight: 600;
+    }
+
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      background: var(--surface-container-high);
+      border: var(--hairline-strong);
+      border-radius: var(--rounded);
+      color: var(--on-surface);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--dur-micro) var(--ease-out);
+    }
+
+    .btn-action:hover {
+      background: var(--surface-container-highest);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--on-primary);
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      background: #7ae0ed;
+      color: var(--on-primary);
+    }
+
+    /* Main Grid Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 320px minmax(360px, 1fr) minmax(380px, 460px);
+      gap: var(--space-md);
+      align-items: start;
+      flex: 1;
+    }
+
+    @media (max-width: 1280px) {
+      .main-grid {
+        grid-template-columns: 300px 1fr;
+      }
+      .right-pane {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Cards / Panels */
+    .card-panel {
+      background: var(--panel-gradient);
+      border: var(--hairline);
+      border-radius: var(--rounded-lg);
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding-bottom: var(--space-xs);
+      border-bottom: var(--hairline);
+    }
+
+    .panel-title {
+      font-family: var(--font-headline);
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: var(--heading-tracking);
+      color: var(--on-surface);
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: var(--font-label);
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 2px 7px;
+      border-radius: var(--rounded-full);
+      background: var(--surface-container-highest);
+      color: var(--on-surface-variant);
+      border: var(--hairline);
+    }
+
+    .badge-primary {
+      background: var(--primary-container);
+      color: var(--primary);
+      border-color: rgba(99, 199, 214, 0.3);
+    }
+
+    /* Left Pane: Character Palette */
+    .left-pane {
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      padding-right: var(--space-xs);
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 8px 12px 8px 34px;
+      font-size: 0.85rem;
+      color: var(--on-surface);
+      transition: border-color var(--dur-micro) var(--ease-out);
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--on-surface-variant);
+      pointer-events: none;
+    }
+
+    .char-filter-tabs {
+      display: flex;
+      background: var(--surface-container-low);
+      border-radius: var(--rounded);
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .char-tab-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--on-surface-variant);
+      font-size: 0.78rem;
+      font-family: var(--font-label);
+      font-weight: 500;
+      padding: 6px 4px;
+      border-radius: calc(var(--rounded) - 3px);
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--dur-micro) var(--ease-out);
+    }
+
+    .char-tab-btn:hover {
+      color: var(--on-surface);
+    }
+
+    .char-tab-btn.active {
+      background: var(--surface-container-high);
+      color: var(--primary);
+      font-weight: 600;
+      border: 1px solid rgba(99, 199, 214, 0.2);
+    }
+
+    .char-grid-wrapper {
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 6px;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+
+    .char-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+    }
+
+    .char-card {
+      aspect-ratio: 1;
+      background: var(--surface-container);
+      border: 1px solid transparent;
+      border-radius: var(--rounded-sm);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all var(--dur-micro) var(--ease-out);
+      padding: 2px;
+      position: relative;
+    }
+
+    .char-card:hover {
+      background: var(--surface-container-high);
+      border-color: var(--outline);
+    }
+
+    .char-card.active {
+      background: var(--primary-container);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+
+    .char-card.modified::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--tertiary);
+    }
+
+    .char-card-symbol {
+      font-family: var(--font-label);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--on-surface);
+      line-height: 1;
+    }
+
+    .char-card-code {
+      font-family: var(--font-label);
+      font-size: 0.62rem;
+      color: var(--on-surface-variant);
+      margin-top: 3px;
+    }
+
+    /* Center Pane: Pixel Grid Editor */
+    .center-pane {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    .editor-status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-md);
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 10px 14px;
+    }
+
+    .glyph-info {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+    }
+
+    .current-char-preview {
+      width: 48px;
+      height: 48px;
+      background: var(--surface-container);
+      border: var(--hairline-strong);
+      border-radius: var(--rounded);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-label);
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .glyph-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .glyph-name {
+      font-family: var(--font-headline);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--on-surface);
+    }
+
+    .glyph-codes {
+      display: flex;
+      gap: 8px;
+      font-family: var(--font-label);
+      font-size: 0.75rem;
+      color: var(--on-surface-variant);
+    }
+
+    .glyph-codes span {
+      background: var(--surface-container-high);
+      padding: 1px 6px;
+      border-radius: 3px;
+      border: var(--hairline);
+    }
+
+    /* Editor Toolbar */
+    .editor-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: var(--space-xs) 0;
+    }
+
+    .tool-btn-group {
+      display: inline-flex;
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .tool-btn {
+      background: transparent;
+      border: none;
+      color: var(--on-surface-variant);
+      padding: 6px 10px;
+      border-radius: calc(var(--rounded) - 2px);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      transition: all var(--dur-micro) var(--ease-out);
+    }
+
+    .tool-btn:hover {
+      background: var(--surface-container-high);
+      color: var(--on-surface);
+    }
+
+    .tool-btn.active {
+      background: var(--primary);
+      color: var(--on-primary);
+      font-weight: 600;
+    }
+
+    /* Grid Canvas Container */
+    .grid-editor-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #090e10;
+      border: var(--hairline);
+      border-radius: var(--rounded-lg);
+      padding: var(--space-lg);
+      position: relative;
+      user-select: none;
+      touch-action: none;
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .pixel-grid {
+      display: grid;
+      gap: 2px;
+      background: #182429;
+      padding: 3px;
+      border-radius: var(--rounded-sm);
+      border: 1px solid var(--outline);
+    }
+
+    .pixel-cell {
+      width: 32px;
+      height: 32px;
+      background: #111a1e;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background-color 70ms ease, transform 70ms ease;
+      position: relative;
+    }
+
+    @media (max-width: 480px) {
+      .pixel-cell {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    .pixel-cell:hover {
+      filter: brightness(1.3);
+    }
+
+    .pixel-cell.active {
+      background: var(--primary);
+      box-shadow: 0 0 6px rgba(99, 199, 214, 0.5);
+    }
+
+    .pixel-cell.baseline-guide {
+      border-bottom: 2px solid rgba(232, 185, 84, 0.6);
+    }
+
+    .pixel-cell.x-height-guide {
+      border-top: 1px dashed rgba(135, 214, 155, 0.45);
+    }
+
+    /* Right Pane: Real-Time Preview & C++ Code Export */
+    .right-pane {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    /* Live Preview Section */
+    .preview-box {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .preview-canvas-wrapper {
+      background: #050809;
+      border: 2px solid var(--outline);
+      border-radius: var(--rounded);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 140px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+
+    .tft-canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      max-width: 100%;
+      border-radius: 2px;
+    }
+
+    .preview-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    .preview-input-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-label);
+      font-size: 0.75rem;
+      color: var(--on-surface-variant);
+    }
+
+    .preview-textarea {
+      width: 100%;
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 10px 12px;
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      color: var(--on-surface);
+      resize: vertical;
+      min-height: 64px;
+      transition: border-color var(--dur-micro) var(--ease-out);
+    }
+
+    .preview-textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .preset-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .preset-chip {
+      background: var(--surface-container-high);
+      border: var(--hairline);
+      border-radius: var(--rounded-full);
+      padding: 3px 9px;
+      font-size: 0.72rem;
+      font-family: var(--font-label);
+      color: var(--on-surface-variant);
+      cursor: pointer;
+      transition: all var(--dur-micro) var(--ease-out);
+    }
+
+    .preset-chip:hover {
+      background: var(--surface-container-highest);
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+
+    /* Color Theme Selector */
+    .color-themes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .theme-swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--rounded-full);
+      border: 2px solid var(--outline-variant);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out);
+      position: relative;
+    }
+
+    .theme-swatch:hover {
+      transform: scale(1.1);
+      border-color: var(--outline);
+    }
+
+    .theme-swatch.active {
+      border-color: var(--primary);
+      transform: scale(1.15);
+      box-shadow: 0 0 0 2px var(--primary-container);
+    }
+
+    .theme-swatch-inner {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    /* Code Export Section */
+    .code-export-box {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .code-area-wrapper {
+      position: relative;
+      background: #080d0e;
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      overflow: hidden;
+    }
+
+    .code-output {
+      width: 100%;
+      height: 210px;
+      background: transparent;
+      border: none;
+      padding: 12px;
+      font-family: var(--font-label);
+      font-size: 0.78rem;
+      color: #9fe2ec;
+      line-height: 1.45;
+      resize: vertical;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .code-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    /* Toast Notification */
+    .toast-msg {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface-container-highest);
+      color: var(--on-surface);
+      border: 1px solid var(--tertiary);
+      border-radius: var(--rounded);
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 220ms var(--ease-out);
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .toast-msg.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Info Callout */
+    .callout-info {
+      background: rgba(99, 199, 214, 0.08);
+      border-left: 3px solid var(--primary);
+      border-radius: 0 var(--rounded) var(--rounded) 0;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      color: var(--on-surface-variant);
+      line-height: 1.4;
+    }
+
+    .callout-info strong {
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--surface-container-low);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--outline);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="brand-icon">
+          <i data-lucide="cpu" style="width: 24px; height: 24px;"></i>
+        </div>
+        <div class="brand-titles">
+          <h1>ST7735 Font Studio</h1>
+          <p>Интерактивный редактор растровых шрифтов 7x11 и 5x7 для Arduino / ESP32 / STM32</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <!-- Font Format Selector -->
+        <div class="control-item">
+          <label class="control-label">Формат шрифта</label>
+          <div class="segmented-control" id="fontFormatSelector">
+            <button class="seg-btn active" id="btnFont7x11" onclick="switchFontMode('7x11')">
+              <i data-lucide="grid-3x3" style="width: 14px; height: 14px;"></i> 7×11 (Row-major)
+            </button>
+            <button class="seg-btn" id="btnFont5x7" onclick="switchFontMode('5x7')">
+              <i data-lucide="layout-grid" style="width: 14px; height: 14px;"></i> 5×7 (Col-major)
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="control-item" style="justify-content: flex-end;">
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action" onclick="resetCurrentFont()" title="Восстановить заводской шрифт">
+              <i data-lucide="rotate-ccw" style="width: 15px; height: 15px;"></i> Сброс
+            </button>
+            <button class="btn-action btn-primary" onclick="copyFullCode()" title="Скопировать весь C++ код">
+              <i data-lucide="copy" style="width: 15px; height: 15px;"></i> Копировать C++
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main 3-Pane Layout -->
+    <main class="main-grid">
+      
+      <!-- 1. Left Column: Character Palette & Navigation -->
+      <section class="card-panel left-pane">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <i data-lucide="book-open" style="width: 18px; height: 18px; color: var(--primary);"></i>
+            Таблица символов
+          </h2>
+          <span class="badge" id="charCountBadge">192 глифа</span>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-box">
+          <i data-lucide="search" class="search-icon" style="width: 16px; height: 16px;"></i>
+          <input type="text" id="charSearchInput" class="search-input" placeholder="Поиск (буква, 0x..., код)..." oninput="filterCharacters()">
+        </div>
+
+        <!-- Character Set Tabs: ASCII vs CP1251 Cyrillic -->
+        <div class="char-filter-tabs">
+          <button class="char-tab-btn active" id="tabCyrillic" onclick="switchCharTab('cyrillic')">Кириллица CP1251</button>
+          <button class="char-tab-btn" id="tabAscii" onclick="switchCharTab('ascii')">ASCII (0x20-0x7F)</button>
+          <button class="char-tab-btn" id="tabAll" onclick="switchCharTab('all')">Все (0..191)</button>
+        </div>
+
+        <!-- Character Grid -->
+        <div class="char-grid-wrapper">
+          <div class="char-grid" id="charGrid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Summary Note -->
+        <div class="callout-info">
+          <strong>CP1251:</strong> включает русские (А-я, Ёё), белорусские (Ўў, Іі), украинские (Єє, Її, Ґґ) и служебные знаки (§, °, ±, « », №).
+        </div>
+      </section>
+
+      <!-- 2. Center Column: Interactive Pixel Grid Editor -->
+      <section class="card-panel center-pane">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <i data-lucide="edit-3" style="width: 18px; height: 18px; color: var(--primary);"></i>
+            Редактор матрицы пикселей
+          </h2>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn-action" onclick="undo()" id="btnUndo" title="Отменить (Ctrl+Z)" disabled>
+              <i data-lucide="undo" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="btn-action" onclick="redo()" id="btnRedo" title="Повторить (Ctrl+Y)" disabled>
+              <i data-lucide="redo" style="width: 14px; height: 14px;"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Active Glyph Status Bar -->
+        <div class="editor-status-bar">
+          <div class="glyph-info">
+            <div class="current-char-preview" id="statusCharDisplay">A</div>
+            <div class="glyph-meta">
+              <div class="glyph-name" id="statusCharName">Символ 'A'</div>
+              <div class="glyph-codes">
+                <span>CP1251: <b id="statusCpCode">0x41</b> (<b id="statusCpDec">65</b>)</span>
+                <span>Индекс: <b id="statusGlyphIndex">33</b></span>
+              </div>
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action" onclick="copyCurrentGlyphCode()" title="Скопировать байты только этого глифа">
+              <i data-lucide="code" style="width: 14px; height: 14px;"></i> Байты глифа
+            </button>
+            <button class="btn-action" onclick="resetCurrentGlyph()" title="Сбросить этот глиф к заводскому">
+              <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> Сброс
+            </button>
+          </div>
+        </div>
+
+        <!-- Drawing Tools & Transformations -->
+        <div class="editor-toolbar">
+          <!-- Pen / Eraser -->
+          <div class="tool-btn-group">
+            <button class="tool-btn active" id="toolPen" onclick="setDrawTool('pen')">
+              <i data-lucide="pen-tool" style="width: 14px; height: 14px;"></i> Карандаш
+            </button>
+            <button class="tool-btn" id="toolEraser" onclick="setDrawTool('eraser')">
+              <i data-lucide="eraser" style="width: 14px; height: 14px;"></i> Ластик
+            </button>
+          </div>
+
+          <!-- Shifts -->
+          <div class="tool-btn-group">
+            <button class="tool-btn" onclick="shiftGlyph('left')" title="Сдвиг влево">
+              <i data-lucide="arrow-left" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="tool-btn" onclick="shiftGlyph('right')" title="Сдвиг вправо">
+              <i data-lucide="arrow-right" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="tool-btn" onclick="shiftGlyph('up')" title="Сдвиг вверх">
+              <i data-lucide="arrow-up" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="tool-btn" onclick="shiftGlyph('down')" title="Сдвиг вниз">
+              <i data-lucide="arrow-down" style="width: 14px; height: 14px;"></i>
+            </button>
+          </div>
+
+          <!-- Flip & Operations -->
+          <div class="tool-btn-group">
+            <button class="tool-btn" onclick="flipGlyph('h')" title="Отразить по горизонтали">
+              <i data-lucide="flip-horizontal" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="tool-btn" onclick="flipGlyph('v')" title="Отразить по вертикали">
+              <i data-lucide="flip-vertical" style="width: 14px; height: 14px;"></i>
+            </button>
+            <button class="tool-btn" onclick="invertGlyph()" title="Инвертировать все пиксели">
+              <i data-lucide="contrast" style="width: 14px; height: 14px;"></i> Инверсия
+            </button>
+            <button class="tool-btn" onclick="clearGlyph()" title="Очистить матрицу">
+              <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Очистить
+            </button>
+          </div>
+        </div>
+
+        <!-- Interactive Pixel Grid -->
+        <div class="grid-editor-container" id="gridContainer">
+          <div class="pixel-grid" id="pixelGrid">
+            <!-- Populated dynamically: 7x11 or 5x8 -->
+          </div>
+        </div>
+
+        <!-- Legend / Guidelines info -->
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--on-surface-variant); font-family: var(--font-label);">
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 12px; height: 2px; background: rgba(232, 185, 84, 0.8);"></span> Базовая линия (Baseline)
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 12px; height: 1px; border-top: 1px dashed rgba(135, 214, 155, 0.8);"></span> x-height (строчные)
+          </span>
+          <span id="gridDimensionsLabel">Размер: 7×11 px (11 байт)</span>
+        </div>
+      </section>
+
+      <!-- 3. Right Column: Real-time Live Preview & C++ PROGMEM Export -->
+      <section class="card-panel right-pane">
+        
+        <!-- Live ST7735 Preview -->
+        <div class="preview-box">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <i data-lucide="monitor" style="width: 18px; height: 18px; color: var(--primary);"></i>
+              ST7735 Реальный предпросмотр
+            </h2>
+            
+            <!-- Scale Selector (1x, 2x, 3x) -->
+            <div class="segmented-control" id="scaleSelector">
+              <button class="seg-btn" id="btnScale1" onclick="setPreviewScale(1)">1×</button>
+              <button class="seg-btn active" id="btnScale2" onclick="setPreviewScale(2)">2×</button>
+              <button class="seg-btn" id="btnScale3" onclick="setPreviewScale(3)">3×</button>
+            </div>
+          </div>
+
+          <!-- Color Themes -->
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span class="control-label">Цветовая палитра ST7735:</span>
+            <div class="color-themes" id="themeSwatches">
+              <button class="theme-swatch active" style="background: #000;" onclick="setTheme('#000', '#ffe600', this)" title="ST7735_YELLOW на BLACK">
+                <span class="theme-swatch-inner" style="background: #ffe600;"></span>
+              </button>
+              <button class="theme-swatch" style="background: #000;" onclick="setTheme('#000', '#00ffff', this)" title="ST7735_CYAN на BLACK">
+                <span class="theme-swatch-inner" style="background: #00ffff;"></span>
+              </button>
+              <button class="theme-swatch" style="background: #001f3f;" onclick="setTheme('#001f3f', '#ffffff', this)" title="ST7735_WHITE на NAVY">
+                <span class="theme-swatch-inner" style="background: #ffffff;"></span>
+              </button>
+              <button class="theme-swatch" style="background: #000;" onclick="setTheme('#000', '#00ff66', this)" title="ST7735_GREEN Matrix">
+                <span class="theme-swatch-inner" style="background: #00ff66;"></span>
+              </button>
+              <button class="theme-swatch" style="background: #ffffff;" onclick="setTheme('#ffffff', '#000000', this)" title="ST7735_BLACK на WHITE">
+                <span class="theme-swatch-inner" style="background: #000000;"></span>
+              </button>
+              <button class="theme-swatch" style="background: #000;" onclick="setTheme('#000', '#ff9900', this)" title="ST7735_ORANGE Retro">
+                <span class="theme-swatch-inner" style="background: #ff9900;"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Simulated TFT Canvas -->
+          <div class="preview-canvas-wrapper">
+            <canvas id="tftPreviewCanvas" class="tft-canvas" width="320" height="120"></canvas>
+          </div>
+
+          <!-- Live Text Input (Instant real-time update on keydown/input/delete) -->
+          <div class="preview-input-group">
+            <div class="preview-input-label">
+              <span>Текст для тестирования:</span>
+              <span id="previewMetrics">Длина: 19 симв.</span>
+            </div>
+            <textarea id="previewTextInput" class="preview-textarea" rows="2" placeholder="Введите любой текст на русском или латинице..." oninput="updateLivePreview()">Привет, мир! 12.34В
+Беларусь: Ўў Іі 50Hz</textarea>
+          </div>
+
+          <!-- Quick Presets -->
+          <div class="preset-chips">
+            <span class="preset-chip" onclick="setPresetText('Привет, мир! ST7735')">Привет, мир!</span>
+            <span class="preset-chip" onclick="setPresetText('Беларусь: Ўў Іі №45')">Беларусь: Ўў Іі</span>
+            <span class="preset-chip" onclick="setPresetText('U = 14.82 V  I = 2.4A')">Напряжение/Ток</span>
+            <span class="preset-chip" onclick="setPresetText('0123456789 ABCDEF')">0123456789</span>
+            <span class="preset-chip" onclick="setPresetText('Температура: +24.5°C')">+24.5°C ±0.1</span>
+          </div>
+        </div>
+
+        <!-- C++ PROGMEM Export Box -->
+        <div class="code-export-box">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <i data-lucide="file-code" style="width: 18px; height: 18px; color: var(--primary);"></i>
+              Генератор C++ кода (PROGMEM)
+            </h2>
+            <span class="badge badge-primary" id="exportFormatBadge">font7x11.h</span>
+          </div>
+
+          <div class="code-area-wrapper">
+            <textarea id="cppCodeOutput" class="code-output" readonly></textarea>
+          </div>
+
+          <div class="code-actions">
+            <button class="btn-action" onclick="copyFullCode()">
+              <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Копировать заголовок .h
+            </button>
+            <button class="btn-action btn-primary" onclick="downloadHeaderFile()">
+              <i data-lucide="download" style="width: 14px; height: 14px;"></i> Скачать .h файл
+            </button>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- State Persistence Shim -->
+    <api-shim></api-shim>
+
+    <!-- Toast Notification -->
+    <div id="toastMessage" class="toast-msg">
+      <i data-lucide="check-circle" style="width: 18px; height: 18px; color: var(--tertiary);"></i>
+      <span id="toastText">Скопировано в буфер обмена!</span>
+    </div>
+  </div>
+
+  <script>
+    /* =====================================================================
+     * ШРИФТЫ ST7735: ДАННЫЕ И ЛОГИКА
+     * Поддержка двух форматов драйвера ST7735:
+     * 1) 7x11: row-major (11 байт/глиф, бит 0 = левый пиксель). w=7, h=11.
+     * 2) 5x7:  column-major (5 байт/глиф, бит 0 = верхний пиксель). w=5, h=8.
+     * ===================================================================== */
+
+    // CP1251 таблица сопоставления для Unicode символов
+    const CP1251_MAP = {
+      0x0401: 0xA8, // Ё
+      0x0451: 0xB8, // ё
+      0x040E: 0xA1, // Ў (белорусская)
+      0x045E: 0xA2, // ў
+      0x0406: 0xB2, // І
+      0x0456: 0xB3, // і
+      0x0407: 0xAF, // Ї (украинская)
+      0x0457: 0xBF, // ї
+      0x0490: 0xA5, // Ґ
+      0x0491: 0xB4, // ґ
+      0x0404: 0xAA, // Є
+      0x0454: 0xBA, // є
+      0x2116: 0xB9, // №
+      0x00AB: 0xAB, // «
+      0x00BB: 0xBB, // »
+      0x00A0: 0xA0, // NBSP
+      0x00A7: 0xA7, // §
+      0x00A9: 0xA9, // ©
+      0x00AE: 0xAE, // ®
+      0x00B0: 0xB0, // °
+      0x00B1: 0xB1, // ±
+      0x00B5: 0xB5, // µ
+      0x00B7: 0xB7  // ·
+    };
+
+    // Глобальное состояние
+    const AppState = {
+      fontMode: '7x11',       // '7x11' или '5x7'
+      activeCharIndex: 33,    // Индекс в массиве (0..191) -> по умолчанию 'A' (код 65 -> 65-32 = 33)
+      charTab: 'cyrillic',    // 'cyrillic', 'ascii', 'all'
+      drawTool: 'pen',        // 'pen', 'eraser'
+      isMouseDown: false,
+      drawStateToApply: 1,    // 1 для включения пикселя, 0 для выключения
+      previewScale: 2,        // 1, 2, 3
+      tftTheme: {
+        bg: '#000000',
+        fg: '#ffe600'
+      },
+      modifiedGlyphs: new Set(),
+      undoStack: [],
+      redoStack: []
+    };
+
+    // Описания глифов: 192 штуки (0x20..0x7F = 96, 0xA0..0xFF = 96)
+    const GLYPH_METAS = [];
+    (function initMetas() {
+      // 0x20 .. 0x7F (ASCII, 96 символов)
+      for (let code = 0x20; code <= 0x7F; code++) {
+        let char = String.fromCharCode(code);
+        let name = char;
+        if (code === 0x20) { char = ' '; name = 'Пробел (Space)'; }
+        else if (code === 0x7F) { char = '⌂'; name = 'DEL / Box'; }
+        GLYPH_METAS.push({
+          index: GLYPH_METAS.length,
+          code: code,
+          char: char,
+          name: name,
+          isCyrillic: false,
+          isAscii: true
+        });
+      }
+
+      // 0xA0 .. 0xFF (CP1251, 96 символов)
+      for (let code = 0xA0; code <= 0xFF; code++) {
+        let char = '';
+        let name = '';
+
+        if (code >= 0xC0 && code <= 0xDF) {
+          // А..Я
+          char = String.fromCharCode(0x0410 + (code - 0xC0));
+          name = `Буква '${char}'`;
+        } else if (code >= 0xE0 && code <= 0xFF) {
+          // а..я
+          char = String.fromCharCode(0x0430 + (code - 0xE0));
+          name = `Буква '${char}'`;
+        } else if (code === 0xA1) { char = 'Ў'; name = 'Белорусская Ў'; }
+        else if (code === 0xA2) { char = 'ў'; name = 'Белорусская ў'; }
+        else if (code === 0xA8) { char = 'Ё'; name = 'Буква Ё'; }
+        else if (code === 0xB8) { char = 'ё'; name = 'Буква ё'; }
+        else if (code === 0xB2) { char = 'І'; name = 'Буква І'; }
+        else if (code === 0xB3) { char = 'і'; name = 'Буква і'; }
+        else if (code === 0xAF) { char = 'Ї'; name = 'Буква Ї'; }
+        else if (code === 0xBF) { char = 'ї'; name = 'Буква ї'; }
+        else if (code === 0xAA) { char = 'Є'; name = 'Буква Є'; }
+        else if (code === 0xBA) { char = 'є'; name = 'Буква є'; }
+        else if (code === 0xA5) { char = 'Ґ'; name = 'Буква Ґ'; }
+        else if (code === 0xB4) { char = 'ґ'; name = 'Буква ґ'; }
+        else if (code === 0xB9) { char = '№'; name = 'Знак номера №'; }
+        else if (code === 0xAB) { char = '«'; name = 'Кавычка «'; }
+        else if (code === 0xBB) { char = '»'; name = 'Кавычка »'; }
+        else if (code === 0xB0) { char = '°'; name = 'Градус °'; }
+        else if (code === 0xB1) { char = '±'; name = 'Плюс-минус ±'; }
+        else if (code === 0xA7) { char = '§'; name = 'Параграф §'; }
+        else if (code === 0xA9) { char = '©'; name = 'Copyright ©'; }
+        else if (code === 0xAE) { char = '®'; name = 'Registered ®'; }
+        else if (code === 0xB5) { char = 'µ'; name = 'Микро µ'; }
+        else if (code === 0xB7) { char = '·'; name = 'Интерпункт ·'; }
+        else if (code === 0xA0) { char = ' '; name = 'NBSP (неразрывный)'; }
+        else {
+          char = String.fromCharCode(code);
+          name = `Спецсимвол 0x${code.toString(16).toUpperCase()}`;
+        }
+
+        GLYPH_METAS.push({
+          index: GLYPH_METAS.length,
+          code: code,
+          char: char,
+          name: name,
+          isCyrillic: true,
+          isAscii: false
+        });
+      }
+    })();
+
+    // Хранилища шрифтовых матриц:
+    // font7x11Data: 192 элементов, каждый - массив из 11 байт (row-major)
+    // font5x7Data:  192 элементов, каждый - массив из 5 байт  (col-major)
+    let font7x11Data = [];
+    let font5x7Data = [];
+    let default7x11Data = [];
+    let default5x7Data = [];
+
+    // Генерация/инициализация стандартных глифов 7x11 и 5x7
+    // Встроенный полный шрифт из font7x11.h (192 глифа × 11 байт)
+  // Полный шрифт из font7x11.h — загружается вместо Canvas-генерации
+  const EMBEDDED_FONT_7x11 = [
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x0c, 0x0c, 0x0c, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00, 0x00],
+    [0x00, 0x0a, 0x0a, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x12, 0x12, 0x7f, 0x12, 0x12, 0x7f, 0x12, 0x12, 0x00, 0x00],
+    [0x04, 0x1e, 0x25, 0x05, 0x1e, 0x14, 0x24, 0x25, 0x1e, 0x04, 0x00],
+    [0x00, 0x23, 0x13, 0x08, 0x04, 0x04, 0x02, 0x19, 0x18, 0x00, 0x00],
+    [0x00, 0x0e, 0x11, 0x11, 0x0a, 0x04, 0x2a, 0x11, 0x2e, 0x00, 0x00],
+    [0x00, 0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x08, 0x04, 0x02, 0x02, 0x02, 0x02, 0x02, 0x04, 0x08, 0x00],
+    [0x00, 0x02, 0x04, 0x08, 0x08, 0x08, 0x08, 0x08, 0x04, 0x02, 0x00],
+    [0x00, 0x00, 0x04, 0x15, 0x0e, 0x15, 0x04, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x04, 0x04, 0x1f, 0x04, 0x04, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c, 0x04, 0x02],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c, 0x00, 0x00],
+    [0x00, 0x10, 0x10, 0x08, 0x08, 0x04, 0x04, 0x02, 0x02, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x31, 0x29, 0x25, 0x23, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x08, 0x0c, 0x0a, 0x08, 0x08, 0x08, 0x08, 0x3e, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x20, 0x10, 0x08, 0x04, 0x02, 0x3f, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x20, 0x1c, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x10, 0x18, 0x14, 0x12, 0x11, 0x3f, 0x10, 0x10, 0x00, 0x00],
+    [0x00, 0x3f, 0x01, 0x01, 0x1f, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x1f, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x3f, 0x20, 0x20, 0x10, 0x08, 0x04, 0x04, 0x04, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x1e, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x3e, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x04, 0x02],
+    [0x00, 0x00, 0x20, 0x10, 0x08, 0x04, 0x08, 0x10, 0x20, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x3e, 0x00, 0x3e, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x20, 0x10, 0x08, 0x08, 0x00, 0x08, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x3d, 0x35, 0x35, 0x3d, 0x01, 0x1e, 0x00, 0x00],
+    [0x00, 0x0c, 0x12, 0x21, 0x21, 0x3f, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x1f, 0x21, 0x21, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x01, 0x01, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x0f, 0x11, 0x21, 0x21, 0x21, 0x21, 0x11, 0x0f, 0x00, 0x00],
+    [0x00, 0x3f, 0x01, 0x01, 0x1f, 0x01, 0x01, 0x01, 0x3f, 0x00, 0x00],
+    [0x00, 0x3f, 0x01, 0x01, 0x1f, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x01, 0x39, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x21, 0x3f, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x30, 0x20, 0x20, 0x20, 0x20, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x21, 0x11, 0x09, 0x07, 0x09, 0x11, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x3f, 0x00, 0x00],
+    [0x00, 0x41, 0x63, 0x55, 0x49, 0x41, 0x41, 0x41, 0x41, 0x00, 0x00],
+    [0x00, 0x21, 0x23, 0x25, 0x29, 0x31, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x21, 0x21, 0x29, 0x11, 0x2e, 0x00, 0x00],
+    [0x00, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x09, 0x11, 0x21, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x1e, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x7f, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x41, 0x41, 0x22, 0x22, 0x14, 0x14, 0x08, 0x08, 0x00, 0x00],
+    [0x00, 0x41, 0x41, 0x49, 0x49, 0x55, 0x55, 0x63, 0x41, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x12, 0x0c, 0x0c, 0x12, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x41, 0x41, 0x22, 0x14, 0x08, 0x08, 0x08, 0x08, 0x00, 0x00],
+    [0x00, 0x3f, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x3f, 0x00, 0x00],
+    [0x00, 0x0e, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0e, 0x00],
+    [0x00, 0x02, 0x02, 0x04, 0x04, 0x08, 0x08, 0x10, 0x10, 0x00, 0x00],
+    [0x00, 0x0e, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0e, 0x00],
+    [0x00, 0x0c, 0x12, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f],
+    [0x00, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x20, 0x3e, 0x21, 0x21, 0x3e, 0x00, 0x00],
+    [0x00, 0x01, 0x01, 0x1d, 0x23, 0x21, 0x21, 0x23, 0x1d, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x01, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x20, 0x20, 0x2e, 0x31, 0x21, 0x21, 0x31, 0x2e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x3f, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x0c, 0x12, 0x02, 0x0f, 0x02, 0x02, 0x02, 0x02, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x3e, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x21, 0x1e],
+    [0x00, 0x01, 0x01, 0x1d, 0x23, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x04, 0x00, 0x06, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x08, 0x00, 0x0c, 0x08, 0x08, 0x08, 0x08, 0x08, 0x09, 0x06],
+    [0x00, 0x01, 0x01, 0x11, 0x09, 0x07, 0x09, 0x11, 0x21, 0x00, 0x00],
+    [0x00, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x36, 0x49, 0x49, 0x49, 0x49, 0x49, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1d, 0x23, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1d, 0x23, 0x21, 0x21, 0x23, 0x1d, 0x01, 0x01],
+    [0x00, 0x00, 0x00, 0x2e, 0x31, 0x21, 0x21, 0x31, 0x2e, 0x20, 0x20],
+    [0x00, 0x00, 0x00, 0x1d, 0x23, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x3e, 0x01, 0x1e, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x02, 0x0f, 0x02, 0x02, 0x02, 0x12, 0x0c, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x21, 0x21, 0x31, 0x2e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x12, 0x12, 0x0c, 0x0c, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x41, 0x49, 0x49, 0x55, 0x55, 0x22, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x12, 0x0c, 0x0c, 0x12, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x21, 0x1e],
+    [0x00, 0x00, 0x00, 0x3f, 0x20, 0x10, 0x08, 0x04, 0x3f, 0x00, 0x00],
+    [0x00, 0x18, 0x04, 0x04, 0x04, 0x02, 0x04, 0x04, 0x04, 0x18, 0x00],
+    [0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x00],
+    [0x00, 0x06, 0x08, 0x08, 0x08, 0x10, 0x08, 0x08, 0x08, 0x06, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x26, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x7f, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x7f, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x12, 0x21, 0x21, 0x12, 0x12, 0x0c, 0x04, 0x02, 0x01, 0x00, 0x00],
+    [0x00, 0x12, 0x0c, 0x21, 0x21, 0x12, 0x12, 0x0c, 0x04, 0x02, 0x01],
+    [0x00, 0x30, 0x20, 0x20, 0x20, 0x20, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x1e, 0x12, 0x1e, 0x21, 0x00, 0x00, 0x00],
+    [0x10, 0x1f, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x04, 0x04, 0x04, 0x00, 0x00, 0x04, 0x04, 0x04, 0x00, 0x00],
+    [0x00, 0x1e, 0x01, 0x1e, 0x21, 0x1e, 0x20, 0x1e, 0x00, 0x00, 0x00],
+    [0x12, 0x3f, 0x01, 0x01, 0x1f, 0x01, 0x01, 0x01, 0x3f, 0x00, 0x00],
+    [0x00, 0x3e, 0x5d, 0x45, 0x45, 0x45, 0x5d, 0x41, 0x3e, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x0f, 0x01, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x24, 0x12, 0x09, 0x12, 0x24, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x3f, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x3e, 0x5d, 0x55, 0x5d, 0x4d, 0x55, 0x41, 0x3e, 0x00, 0x00],
+    [0x0a, 0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x06, 0x09, 0x09, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x00, 0x04, 0x04, 0x1f, 0x04, 0x04, 0x00, 0x1f, 0x00, 0x00],
+    [0x00, 0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x04, 0x00, 0x06, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x00, 0x10, 0x1f, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x21, 0x21, 0x31, 0x2e, 0x01, 0x01],
+    [0x00, 0x3e, 0x2f, 0x2f, 0x2e, 0x14, 0x14, 0x14, 0x14, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x00, 0x12, 0x00, 0x1e, 0x21, 0x3f, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x69, 0x5b, 0x6b, 0x0d, 0x0d, 0x09, 0x09, 0x09, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x0f, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x00, 0x12, 0x24, 0x48, 0x24, 0x12, 0x00, 0x00],
+    [0x00, 0x08, 0x00, 0x0c, 0x08, 0x08, 0x08, 0x08, 0x08, 0x09, 0x06],
+    [0x00, 0x1e, 0x21, 0x01, 0x1e, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x3e, 0x01, 0x1e, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x0a, 0x00, 0x06, 0x04, 0x04, 0x04, 0x04, 0x0e, 0x00, 0x00],
+    [0x00, 0x0c, 0x12, 0x21, 0x21, 0x3f, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x1f, 0x01, 0x01, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x1f, 0x21, 0x21, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x3f, 0x21, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x1c, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x7f, 0x41, 0x00],
+    [0x00, 0x3f, 0x01, 0x01, 0x1f, 0x01, 0x01, 0x01, 0x3f, 0x00, 0x00],
+    [0x00, 0x49, 0x49, 0x2a, 0x1c, 0x2a, 0x49, 0x49, 0x49, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x20, 0x1c, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x21, 0x31, 0x29, 0x29, 0x25, 0x25, 0x23, 0x21, 0x00, 0x00],
+    [0x0c, 0x21, 0x31, 0x29, 0x29, 0x25, 0x25, 0x23, 0x21, 0x00, 0x00],
+    [0x00, 0x21, 0x11, 0x09, 0x07, 0x09, 0x11, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x3c, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x21, 0x00, 0x00],
+    [0x00, 0x41, 0x63, 0x55, 0x49, 0x41, 0x41, 0x41, 0x41, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x21, 0x3f, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x3f, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x21, 0x1e],
+    [0x00, 0x7f, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x12, 0x0c, 0x04, 0x04, 0x02, 0x01, 0x00, 0x00],
+    [0x00, 0x08, 0x3e, 0x49, 0x49, 0x49, 0x49, 0x3e, 0x08, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x12, 0x0c, 0x0c, 0x12, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x3f, 0x20, 0x00, 0x00],
+    [0x00, 0x21, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x20, 0x20, 0x00, 0x00],
+    [0x00, 0x49, 0x49, 0x49, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x00, 0x00],
+    [0x00, 0x49, 0x49, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x40, 0x00, 0x00],
+    [0x00, 0x03, 0x02, 0x02, 0x1e, 0x22, 0x22, 0x22, 0x1e, 0x00, 0x00],
+    [0x00, 0x41, 0x41, 0x41, 0x4f, 0x51, 0x51, 0x51, 0x4f, 0x00, 0x00],
+    [0x00, 0x01, 0x01, 0x01, 0x1f, 0x21, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x1e, 0x21, 0x21, 0x3c, 0x20, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x39, 0x45, 0x45, 0x47, 0x45, 0x45, 0x45, 0x39, 0x00, 0x00],
+    [0x00, 0x3e, 0x21, 0x21, 0x3e, 0x28, 0x24, 0x22, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x20, 0x3e, 0x21, 0x21, 0x3e, 0x00, 0x00],
+    [0x00, 0x1e, 0x01, 0x01, 0x1f, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1f, 0x21, 0x1f, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1f, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1c, 0x22, 0x22, 0x22, 0x22, 0x7f, 0x41, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x3f, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x49, 0x49, 0x2a, 0x14, 0x2a, 0x49, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x20, 0x1c, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x31, 0x29, 0x25, 0x25, 0x23, 0x00, 0x00],
+    [0x00, 0x0c, 0x00, 0x21, 0x31, 0x29, 0x25, 0x23, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x11, 0x07, 0x09, 0x11, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1c, 0x12, 0x12, 0x12, 0x12, 0x11, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x41, 0x63, 0x55, 0x49, 0x41, 0x41, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x3f, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x21, 0x21, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x3f, 0x21, 0x21, 0x21, 0x21, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1d, 0x23, 0x21, 0x21, 0x23, 0x1d, 0x01, 0x01],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x01, 0x01, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x12, 0x0c, 0x04, 0x04, 0x02, 0x01],
+    [0x00, 0x00, 0x08, 0x3e, 0x49, 0x49, 0x49, 0x3e, 0x08, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x12, 0x0c, 0x0c, 0x12, 0x21, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x11, 0x11, 0x11, 0x11, 0x3f, 0x20, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x20, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x49, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x40, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x03, 0x02, 0x1e, 0x22, 0x22, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x41, 0x41, 0x4f, 0x51, 0x51, 0x4f, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x01, 0x01, 0x1f, 0x21, 0x21, 0x1f, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x1e, 0x21, 0x3c, 0x20, 0x21, 0x1e, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x39, 0x45, 0x47, 0x45, 0x45, 0x39, 0x00, 0x00],
+    [0x00, 0x00, 0x00, 0x3e, 0x21, 0x3e, 0x24, 0x22, 0x21, 0x00, 0x00],
+  ];
+
+    function initDefaultFontBuffers() {
+      // 1. Загружаем встроенный шрифт 7x11 (из font7x11.h)
+      font7x11Data = EMBEDDED_FONT_7x11.map(g => Array.from(g));
+      
+      // 2. Создаём 5x7 через Canvas (нет встроенного)
+      font5x7Data = new Array(192);
+
+      // Вспомогательный холст для растрирования высококачественных стандартных глифов
+      const offCanvas = document.createElement('canvas');
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+      // 7x11 уже загружен из EMBEDDED_FONT_7x11 выше
+
+            // 7x11: ручные переопределения не нужны — шрифт загружен целиком
+
+      // Заполняем 5x7 (w=5, h=8, column-major: 5 bytes, bit 0 = topmost)
+      offCanvas.width = 5;
+      offCanvas.height = 8;
+
+      for (let i = 0; i < 192; i++) {
+        const meta = GLYPH_METAS[i];
+        const bytes = new Uint8Array(5);
+
+        if (meta.code !== 0x20 && meta.code !== 0xA0) {
+          offCtx.fillStyle = '#000000';
+          offCtx.fillRect(0, 0, 5, 8);
+          offCtx.fillStyle = '#ffffff';
+          offCtx.font = 'bold 7px "Courier New", monospace';
+          offCtx.fillText(meta.char, 0, 6);
+
+          const imgData = offCtx.getImageData(0, 0, 5, 8).data;
+          for (let x = 0; x < 5; x++) {
+            let colByte = 0;
+            for (let y = 0; y < 8; y++) {
+              const idx = (y * 5 + x) * 4;
+              if (imgData[idx] > 120) {
+                colByte |= (1 << y); // bit 0 = topmost
+              }
+            }
+            bytes[x] = colByte;
+          }
+        }
+        font5x7Data[i] = Array.from(bytes);
+      }
+
+      // Известные глифы 5x7 из st7735:
+      // '!' (index 1):
+      font5x7Data[1] = [0x00, 0x00, 0x5F, 0x00, 0x00];
+      // '+' (index 11):
+      font5x7Data[11] = [0x08, 0x08, 0x3E, 0x08, 0x08];
+      // 'A' (index 33):
+      font5x7Data[33] = [0x7C, 0x12, 0x11, 0x12, 0x7C];
+
+      // Сохраняем копии по умолчанию
+      default7x11Data = JSON.parse(JSON.stringify(font7x11Data));
+      default5x7Data = JSON.parse(JSON.stringify(font5x7Data));
+    }
+
+    // Получить текущий массив байт активного шрифта
+    function getCurrentFontBuffer() {
+      return AppState.fontMode === '7x11' ? font7x11Data : font5x7Data;
+    }
+
+    function getCurrentGlyphBytes(index = AppState.activeCharIndex) {
+      return getCurrentFontBuffer()[index];
+    }
+
+    /* =====================================================================
+     * ПРЕОБРАЗОВАНИЕ ПИКСЕЛЬНОЙ МАТРИЦЫ <-> БАЙТЫ
+     * ===================================================================== */
+
+    // Возвращает двумерный массив [y][x] (0 или 1)
+    function getGlyphPixelMatrix(index = AppState.activeCharIndex) {
+      const bytes = getCurrentGlyphBytes(index);
+      if (AppState.fontMode === '7x11') {
+        // w=7, h=11, row-major: byte per row, bit 0 = col 0 (left)
+        const matrix = [];
+        for (let y = 0; y < 11; y++) {
+          const row = [];
+          const b = bytes[y] || 0;
+          for (let x = 0; x < 7; x++) {
+            row.push((b & (1 << x)) ? 1 : 0);
+          }
+          matrix.push(row);
+        }
+        return matrix;
+      } else {
+        // w=5, h=8, column-major: byte per col, bit 0 = row 0 (top)
+        const matrix = [];
+        for (let y = 0; y < 8; y++) {
+          const row = [];
+          for (let x = 0; x < 5; x++) {
+            const b = bytes[x] || 0;
+            row.push((b & (1 << y)) ? 1 : 0);
+          }
+          matrix.push(row);
+        }
+        return matrix;
+      }
+    }
+
+    // Записать двумерный массив пикселей обратно в байты глифа
+    function setGlyphPixelMatrix(matrix, index = AppState.activeCharIndex, pushUndo = true) {
+      if (pushUndo) {
+        saveUndoState();
+      }
+
+      if (AppState.fontMode === '7x11') {
+        const bytes = new Array(11).fill(0);
+        for (let y = 0; y < 11; y++) {
+          let b = 0;
+          for (let x = 0; x < 7; x++) {
+            if (matrix[y] && matrix[y][x]) {
+              b |= (1 << x);
+            }
+          }
+          bytes[y] = b;
+        }
+        font7x11Data[index] = bytes;
+      } else {
+        const bytes = new Array(5).fill(0);
+        for (let x = 0; x < 5; x++) {
+          let b = 0;
+          for (let y = 0; y < 8; y++) {
+            if (matrix[y] && matrix[y][x]) {
+              b |= (1 << y);
+            }
+          }
+          bytes[x] = b;
+        }
+        font5x7Data[index] = bytes;
+      }
+
+      AppState.modifiedGlyphs.add(index);
+      renderPixelGrid();
+      updateCharacterCard(index);
+      updateLivePreview();
+      updateCppOutput();
+      updateUndoRedoButtons();
+    }
+
+    /* =====================================================================
+     * РЕНДЕР ИНТЕРФЕЙСА: СЕТКА ПИКСЕЛЕЙ
+     * ===================================================================== */
+    function renderPixelGrid() {
+      const grid = document.getElementById('pixelGrid');
+      if (!grid) return;
+
+      const w = AppState.fontMode === '7x11' ? 7 : 5;
+      const h = AppState.fontMode === '7x11' ? 11 : 8;
+
+      grid.style.gridTemplateColumns = `repeat(${w}, 1fr)`;
+      grid.innerHTML = '';
+
+      const matrix = getGlyphPixelMatrix();
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'pixel-cell';
+          cell.dataset.x = x;
+          cell.dataset.y = y;
+
+          if (matrix[y][x]) {
+            cell.classList.add('active');
+          }
+
+          // Направляющие линии
+          if (AppState.fontMode === '7x11') {
+            if (y === 8) cell.classList.add('baseline-guide'); // Базовая линия на строке 8
+            if (y === 3) cell.classList.add('x-height-guide'); // x-height на строке 3
+          } else {
+            if (y === 6) cell.classList.add('baseline-guide'); // Базовая линия 5x7
+            if (y === 2) cell.classList.add('x-height-guide');
+          }
+
+          // Обработчики мыши и касаний для гладкого рисования
+          cell.addEventListener('mousedown', (e) => onPixelMouseDown(x, y, e));
+          cell.addEventListener('mouseenter', (e) => onPixelMouseEnter(x, y, e));
+
+          grid.appendChild(cell);
+        }
+      }
+
+      // Обновляем статусную строку
+      const meta = GLYPH_METAS[AppState.activeCharIndex];
+      const charDisplay = document.getElementById('statusCharDisplay');
+      const charName = document.getElementById('statusCharName');
+      const cpCode = document.getElementById('statusCpCode');
+      const cpDec = document.getElementById('statusCpDec');
+      const glyphIndex = document.getElementById('statusGlyphIndex');
+      const dimLabel = document.getElementById('gridDimensionsLabel');
+
+      if (charDisplay) charDisplay.textContent = meta.char;
+      if (charName) charName.textContent = meta.name;
+      if (cpCode) cpCode.textContent = `0x${meta.code.toString(16).toUpperCase()}`;
+      if (cpDec) cpDec.textContent = meta.code;
+      if (glyphIndex) glyphIndex.textContent = meta.index;
+      if (dimLabel) {
+        dimLabel.textContent = AppState.fontMode === '7x11' 
+          ? 'Размер: 7×11 px (11 байт / глиф, row-major)' 
+          : 'Размер: 5×8 px (5 байт / глиф, column-major)';
+      }
+    }
+
+    function onPixelMouseDown(x, y, e) {
+      e.preventDefault();
+      AppState.isMouseDown = true;
+      const matrix = getGlyphPixelMatrix();
+
+      if (AppState.drawTool === 'pen') {
+        // Если кликнули по выключенному - включаем, если по включенному - выключаем
+        AppState.drawStateToApply = matrix[y][x] ? 0 : 1;
+      } else {
+        // Ластик всегда выключает
+        AppState.drawStateToApply = 0;
+      }
+
+      matrix[y][x] = AppState.drawStateToApply;
+      setGlyphPixelMatrix(matrix);
+    }
+
+    function onPixelMouseEnter(x, y, e) {
+      if (!AppState.isMouseDown) return;
+      const matrix = getGlyphPixelMatrix();
+      if (matrix[y][x] !== AppState.drawStateToApply) {
+        matrix[y][x] = AppState.drawStateToApply;
+        setGlyphPixelMatrix(matrix, AppState.activeCharIndex, false);
+      }
+    }
+
+    window.addEventListener('mouseup', () => {
+      AppState.isMouseDown = false;
+    });
+
+    // Сенсорное рисование
+    const gridEl = document.getElementById('gridContainer');
+    if (gridEl) {
+      gridEl.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (el && el.classList.contains('pixel-cell')) {
+          const x = parseInt(el.dataset.x, 10);
+          const y = parseInt(el.dataset.y, 10);
+          const matrix = getGlyphPixelMatrix();
+          if (matrix[y][x] !== AppState.drawStateToApply) {
+            matrix[y][x] = AppState.drawStateToApply;
+            setGlyphPixelMatrix(matrix, AppState.activeCharIndex, false);
+          }
+        }
+      }, { passive: false });
+    }
+
+    /* =====================================================================
+     * ОПЕРАЦИИ С ГЛИФОМ: СДВИГ, ИНВЕРСИЯ, ОЧИСТКА, ОТРАЖЕНИЕ
+     * ===================================================================== */
+    function setDrawTool(tool) {
+      AppState.drawTool = tool;
+      const btnPen = document.getElementById('toolPen');
+      const btnEraser = document.getElementById('toolEraser');
+      if (btnPen && btnEraser) {
+        btnPen.classList.toggle('active', tool === 'pen');
+        btnEraser.classList.toggle('active', tool === 'eraser');
+      }
+    }
+
+    function shiftGlyph(direction) {
+      const w = AppState.fontMode === '7x11' ? 7 : 5;
+      const h = AppState.fontMode === '7x11' ? 11 : 8;
+      const oldM = getGlyphPixelMatrix();
+      const newM = Array.from({ length: h }, () => new Array(w).fill(0));
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (!oldM[y][x]) continue;
+          let nx = x, ny = y;
+          if (direction === 'left') nx = x - 1;
+          if (direction === 'right') nx = x + 1;
+          if (direction === 'up') ny = y - 1;
+          if (direction === 'down') ny = y + 1;
+
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            newM[ny][nx] = 1;
+          }
+        }
+      }
+      setGlyphPixelMatrix(newM);
+    }
+
+    function flipGlyph(axis) {
+      const w = AppState.fontMode === '7x11' ? 7 : 5;
+      const h = AppState.fontMode === '7x11' ? 11 : 8;
+      const oldM = getGlyphPixelMatrix();
+      const newM = Array.from({ length: h }, () => new Array(w).fill(0));
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const nx = axis === 'h' ? (w - 1 - x) : x;
+          const ny = axis === 'v' ? (h - 1 - y) : y;
+          newM[ny][nx] = oldM[y][x];
+        }
+      }
+      setGlyphPixelMatrix(newM);
+    }
+
+    function invertGlyph() {
+      const w = AppState.fontMode === '7x11' ? 7 : 5;
+      const h = AppState.fontMode === '7x11' ? 11 : 8;
+      const oldM = getGlyphPixelMatrix();
+      const newM = Array.from({ length: h }, (_, y) => 
+        Array.from({ length: w }, (_, x) => oldM[y][x] ? 0 : 1)
+      );
+      setGlyphPixelMatrix(newM);
+    }
+
+    function clearGlyph() {
+      const w = AppState.fontMode === '7x11' ? 7 : 5;
+      const h = AppState.fontMode === '7x11' ? 11 : 8;
+      const emptyM = Array.from({ length: h }, () => new Array(w).fill(0));
+      setGlyphPixelMatrix(emptyM);
+    }
+
+    function resetCurrentGlyph() {
+      saveUndoState();
+      const idx = AppState.activeCharIndex;
+      if (AppState.fontMode === '7x11') {
+        font7x11Data[idx] = Array.from(default7x11Data[idx]);
+      } else {
+        font5x7Data[idx] = Array.from(default5x7Data[idx]);
+      }
+      AppState.modifiedGlyphs.delete(idx);
+      renderPixelGrid();
+      updateCharacterCard(idx);
+      updateLivePreview();
+      updateCppOutput();
+      showToast('Глиф сброшен к заводскому виду');
+    }
+
+    function resetCurrentFont() {
+      if (confirm(`Восстановить весь заводской шрифт ${AppState.fontMode}? Все несохраненные правки будут сброшены.`)) {
+        if (AppState.fontMode === '7x11') {
+          font7x11Data = JSON.parse(JSON.stringify(default7x11Data));
+        } else {
+          font5x7Data = JSON.parse(JSON.stringify(default5x7Data));
+        }
+        AppState.modifiedGlyphs.clear();
+        AppState.undoStack = [];
+        AppState.redoStack = [];
+        renderPixelGrid();
+        renderCharacterCards();
+        updateLivePreview();
+        updateCppOutput();
+        updateUndoRedoButtons();
+        showToast('Весь шрифт восстановлен');
+      }
+    }
+
+    /* =====================================================================
+     * UNDO / REDO СИСТЕМА
+     * ===================================================================== */
+    function saveUndoState() {
+      const currentBytes = Array.from(getCurrentGlyphBytes());
+      AppState.undoStack.push({
+        index: AppState.activeCharIndex,
+        bytes: currentBytes
+      });
+      if (AppState.undoStack.length > 50) AppState.undoStack.shift();
+      AppState.redoStack = [];
+      updateUndoRedoButtons();
+    }
+
+    function undo() {
+      if (AppState.undoStack.length === 0) return;
+      const currentBytes = Array.from(getCurrentGlyphBytes());
+      AppState.redoStack.push({
+        index: AppState.activeCharIndex,
+        bytes: currentBytes
+      });
+
+      const prevState = AppState.undoStack.pop();
+      if (prevState.index !== AppState.activeCharIndex) {
+        selectCharacter(prevState.index, false);
+      }
+
+      if (AppState.fontMode === '7x11') {
+        font7x11Data[prevState.index] = prevState.bytes;
+      } else {
+        font5x7Data[prevState.index] = prevState.bytes;
+      }
+
+      renderPixelGrid();
+      updateCharacterCard(prevState.index);
+      updateLivePreview();
+      updateCppOutput();
+      updateUndoRedoButtons();
+    }
+
+    function redo() {
+      if (AppState.redoStack.length === 0) return;
+      const currentBytes = Array.from(getCurrentGlyphBytes());
+      AppState.undoStack.push({
+        index: AppState.activeCharIndex,
+        bytes: currentBytes
+      });
+
+      const nextState = AppState.redoStack.pop();
+      if (nextState.index !== AppState.activeCharIndex) {
+        selectCharacter(nextState.index, false);
+      }
+
+      if (AppState.fontMode === '7x11') {
+        font7x11Data[nextState.index] = nextState.bytes;
+      } else {
+        font5x7Data[nextState.index] = nextState.bytes;
+      }
+
+      renderPixelGrid();
+      updateCharacterCard(nextState.index);
+      updateLivePreview();
+      updateCppOutput();
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      const btnUndo = document.getElementById('btnUndo');
+      const btnRedo = document.getElementById('btnRedo');
+      if (btnUndo) btnUndo.disabled = AppState.undoStack.length === 0;
+      if (btnRedo) btnRedo.disabled = AppState.redoStack.length === 0;
+    }
+
+    // Горячие клавиши Ctrl+Z / Ctrl+Y
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) redo();
+        else undo();
+        e.preventDefault();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        redo();
+        e.preventDefault();
+      }
+    });
+
+    /* =====================================================================
+     * НАВИГАЦИЯ И ВЫБОР СИМВОЛОВ (ЛЕВАЯ ПАНЕЛЬ)
+     * ===================================================================== */
+    function switchCharTab(tab) {
+      AppState.charTab = tab;
+      const btnCyr = document.getElementById('tabCyrillic');
+      const btnAsc = document.getElementById('tabAscii');
+      const btnAll = document.getElementById('tabAll');
+      if (btnCyr) btnCyr.classList.toggle('active', tab === 'cyrillic');
+      if (btnAsc) btnAsc.classList.toggle('active', tab === 'ascii');
+      if (btnAll) btnAll.classList.toggle('active', tab === 'all');
+      renderCharacterCards();
+    }
+
+    function filterCharacters() {
+      renderCharacterCards();
+    }
+
+    function renderCharacterCards() {
+      const grid = document.getElementById('charGrid');
+      const search = (document.getElementById('charSearchInput')?.value || '').toLowerCase().trim();
+      if (!grid) return;
+
+      grid.innerHTML = '';
+      let visibleCount = 0;
+
+      for (let i = 0; i < GLYPH_METAS.length; i++) {
+        const meta = GLYPH_METAS[i];
+
+        // Фильтр по вкладкам
+        if (AppState.charTab === 'cyrillic' && !meta.isCyrillic) continue;
+        if (AppState.charTab === 'ascii' && !meta.isAscii) continue;
+
+        // Фильтр поиска
+        if (search) {
+          const hexCode = `0x${meta.code.toString(16).toLowerCase()}`;
+          const decCode = meta.code.toString();
+          const matchChar = meta.char.toLowerCase().includes(search);
+          const matchName = meta.name.toLowerCase().includes(search);
+          const matchHex = hexCode.includes(search);
+          const matchDec = decCode.includes(search);
+          if (!matchChar && !matchName && !matchHex && !matchDec) continue;
+        }
+
+        visibleCount++;
+        const card = document.createElement('div');
+        card.className = 'char-card';
+        card.id = `charCard_${i}`;
+        if (i === AppState.activeCharIndex) card.classList.add('active');
+        if (AppState.modifiedGlyphs.has(i)) card.classList.add('modified');
+
+        const sym = document.createElement('div');
+        sym.className = 'char-card-symbol';
+        sym.textContent = meta.char;
+
+        const code = document.createElement('div');
+        code.className = 'char-card-code';
+        code.textContent = `0x${meta.code.toString(16).toUpperCase()}`;
+
+        card.appendChild(sym);
+        card.appendChild(code);
+
+        card.addEventListener('click', () => selectCharacter(i));
+        grid.appendChild(card);
+      }
+
+      const badge = document.getElementById('charCountBadge');
+      if (badge) badge.textContent = `${visibleCount} глифов`;
+    }
+
+    function updateCharacterCard(index) {
+      const card = document.getElementById(`charCard_${index}`);
+      if (card) {
+        if (AppState.modifiedGlyphs.has(index)) card.classList.add('modified');
+        else card.classList.remove('modified');
+      }
+    }
+
+    function selectCharacter(index, clearRedo = true) {
+      if (AppState.activeCharIndex === index) return;
+      
+      const prevCard = document.getElementById(`charCard_${AppState.activeCharIndex}`);
+      if (prevCard) prevCard.classList.remove('active');
+
+      AppState.activeCharIndex = index;
+
+      const nextCard = document.getElementById(`charCard_${index}`);
+      if (nextCard) nextCard.classList.add('active');
+
+      if (clearRedo) {
+        AppState.undoStack = [];
+        AppState.redoStack = [];
+        updateUndoRedoButtons();
+      }
+
+      renderPixelGrid();
+    }
+
+    /* =====================================================================
+     * ПЕРЕКЛЮЧЕНИЕ ФОРМАТА ШРИФТА: 7x11 VS 5x7
+     * ===================================================================== */
+    function switchFontMode(mode) {
+      if (AppState.fontMode === mode) return;
+      AppState.fontMode = mode;
+
+      const btn7 = document.getElementById('btnFont7x11');
+      const btn5 = document.getElementById('btnFont5x7');
+      const expBadge = document.getElementById('exportFormatBadge');
+
+      if (btn7) btn7.classList.toggle('active', mode === '7x11');
+      if (btn5) btn5.classList.toggle('active', mode === '5x7');
+      if (expBadge) expBadge.textContent = mode === '7x11' ? 'font7x11.h' : 'font5x7.h';
+
+      AppState.undoStack = [];
+      AppState.redoStack = [];
+      updateUndoRedoButtons();
+
+      renderPixelGrid();
+      updateLivePreview();
+      updateCppOutput();
+      showToast(`Выбран формат шрифта ${mode}`);
+    }
+
+    /* =====================================================================
+     * МГНОВЕННЫЙ ПРЕДПРОСМОТР В РЕАЛЬНОМ ВРЕМЕНИ (TFT PREVIEW)
+     * С высокой точностью воспроизводит рендерер st7735.cpp:
+     * - Поддержка русских/кириллических символов на лету
+     * - Точный расчет textWidth, pitch = (w+1)*scale, lineHeight = (h+1)*scale
+     * - Масштабирование 1x, 2x, 3x без размытия (pixelated)
+     * ===================================================================== */
+
+    function setPreviewScale(scale) {
+      AppState.previewScale = scale;
+      [1, 2, 3].forEach(s => {
+        const btn = document.getElementById(`btnScale${s}`);
+        if (btn) btn.classList.toggle('active', s === scale);
+      });
+      updateLivePreview();
+    }
+
+    function setTheme(bg, fg, buttonEl) {
+      AppState.tftTheme.bg = bg;
+      AppState.tftTheme.fg = fg;
+
+      document.querySelectorAll('.theme-swatch').forEach(el => el.classList.remove('active'));
+      if (buttonEl) buttonEl.classList.add('active');
+
+      updateLivePreview();
+    }
+
+    function setPresetText(text) {
+      const input = document.getElementById('previewTextInput');
+      if (input) {
+        input.value = text;
+        updateLivePreview();
+      }
+    }
+
+    // Преобразование символа строки в индекс глифа (0..191)
+    function charToGlyphIndex(char) {
+      const code = char.charCodeAt(0);
+
+      // 1. Прямой ASCII
+      if (code >= 0x20 && code <= 0x7F) {
+        return code - 0x20;
+      }
+
+      // 2. Кириллица А..я (Unicode 0x0410..0x044F -> CP1251 0xC0..0xFF)
+      if (code >= 0x0410 && code <= 0x044F) {
+        const cp1251 = code - 0x0410 + 0xC0;
+        return 96 + (cp1251 - 0xA0);
+      }
+
+      // 3. Таблица CP1251_MAP (Ё, белорусские Ў, І, № и т.д.)
+      if (CP1251_MAP[code]) {
+        const cp1251 = CP1251_MAP[code];
+        if (cp1251 >= 0xA0 && cp1251 <= 0xFF) {
+          return 96 + (cp1251 - 0xA0);
+        }
+      }
+
+      // 4. Если код уже в диапазоне 0xA0..0xFF
+      if (code >= 0xA0 && code <= 0xFF) {
+        return 96 + (code - 0xA0);
+      }
+
+      // Если символ не найден -> знак вопроса '?' (0x3F -> индекс 31)
+      return 0x3F - 0x20;
+    }
+
+    function updateLivePreview() {
+      const canvas = document.getElementById('tftPreviewCanvas');
+      const input = document.getElementById('previewTextInput');
+      const metricsLabel = document.getElementById('previewMetrics');
+      if (!canvas || !input) return;
+
+      const text = input.value;
+      if (metricsLabel) metricsLabel.textContent = `Длина: ${text.length} симв.`;
+
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      const scale = AppState.previewScale;
+      const is7x11 = AppState.fontMode === '7x11';
+      const glyphW = is7x11 ? 7 : 5;
+      const glyphH = is7x11 ? 11 : 8;
+      const pitch = (glyphW + 1) * scale;
+      const lineHeight = (glyphH + 1) * scale;
+
+      // Рассчитываем размер холста
+      const lines = text.split('\n');
+      let maxLineLen = 1;
+      lines.forEach(l => { if (l.length > maxLineLen) maxLineLen = l.length; });
+
+      const neededWidth = Math.max(280, (maxLineLen + 1) * pitch + 24);
+      const neededHeight = Math.max(100, lines.length * lineHeight + 28);
+
+      if (canvas.width !== neededWidth || canvas.height !== neededHeight) {
+        canvas.width = neededWidth;
+        canvas.height = neededHeight;
+      }
+
+      // Заливка фона дисплея
+      ctx.fillStyle = AppState.tftTheme.bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = AppState.tftTheme.fg;
+
+      let curY = 14;
+
+      for (let l = 0; l < lines.length; l++) {
+        const line = lines[l];
+        let curX = 14;
+
+        for (let c = 0; c < line.length; c++) {
+          const ch = line[c];
+          if (ch === '\r') continue;
+
+          const gIndex = charToGlyphIndex(ch);
+          const matrix = getGlyphPixelMatrix(gIndex);
+
+          // Рисуем каждый пиксель глифа
+          for (let py = 0; py < glyphH; py++) {
+            for (let px = 0; px < glyphW; px++) {
+              if (matrix[py] && matrix[py][px]) {
+                ctx.fillRect(curX + px * scale, curY + py * scale, scale, scale);
+              }
+            }
+          }
+
+          curX += pitch;
+        }
+
+        curY += lineHeight;
+      }
+    }
+
+    /* =====================================================================
+     * C++ КОД: ЭКСПОРТ И ГЕНЕРАТОР
+     * Полная совместимость с заголовками font7x11.h / font5x7.h и ST7735 драйвером
+     * ===================================================================== */
+    function generateCppCode() {
+      const is7x11 = AppState.fontMode === '7x11';
+      const arrName = is7x11 ? 'Font7x11' : 'Font5x7';
+      const structName = is7x11 ? 'font7x11' : 'font5x7';
+      const buffer = getCurrentFontBuffer();
+
+      let header = `/* =====================================================================\n`;
+      header += ` * ${arrName}.h — ST7735 Cyrillic & ASCII Bitmap Font\n`;
+      header += ` * Сгенерировано в ST7735 Font Studio\n`;
+      header += ` * Формат: ${is7x11 ? '7x11 row-major (байт = строка, бит 0 = левый пиксель)' : '5x7 column-major (байт = колонка, бит 0 = верхний пиксель)'}\n`;
+      header += ` * 192 глифа: 0x20..0x7F (ASCII) + 0xA0..0xFF (CP1251 кириллица)\n`;
+      header += ` * ===================================================================== */\n\n`;
+      header += `#ifndef _${arrName.toUpperCase()}_H_\n`;
+      header += `#define _${arrName.toUpperCase()}_H_\n\n`;
+      header += `#if defined(AVR) || defined(ESP8266)\n`;
+      header += `  #include <avr/pgmspace.h>\n`;
+      header += `  #define FONT_PGM PROGMEM\n`;
+      header += `#else\n`;
+      header += `  #define FONT_PGM\n`;
+      header += `#endif\n\n`;
+
+      header += `const unsigned char ${arrName}[] FONT_PGM = {\n`;
+
+      const bytesPerGlyph = is7x11 ? 11 : 5;
+      const lines = [];
+
+      for (let i = 0; i < 192; i++) {
+        const meta = GLYPH_METAS[i];
+        const bytes = buffer[i] || new Array(bytesPerGlyph).fill(0);
+        const hexStr = bytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ');
+        
+        let safeChar = meta.char;
+        if (safeChar === '\\') safeChar = '\\\\';
+        if (safeChar === '/*') safeChar = '/ *';
+        const comment = `  // [${i}] 0x${meta.code.toString(16).toUpperCase()} (${meta.code}) '${safeChar}'`;
+        
+        lines.push(`  ${hexStr},${comment}`);
+      }
+
+      header += lines.join('\n');
+      header += `\n};\n\n`;
+
+      // Дескриптор st7735_font_t
+      header += `/* Дескриптор шрифта для ST7735::setFont(&${structName}) */\n`;
+      header += `const st7735_font_t ${structName} = {\n`;
+      header += `  ${arrName},   // data (указатель на массив)\n`;
+      header += `  ${is7x11 ? 7 : 5},          // w (ширина клетки)\n`;
+      header += `  ${is7x11 ? 11 : 8},         // h (высота клетки)\n`;
+      header += `  1,          // bpc\n`;
+      header += `  ${is7x11 ? 1 : 0},          // flags: ${is7x11 ? '1 = row-major' : '0 = col-major'}\n`;
+      header += `  0x20,       // first (ASCII 32)\n`;
+      header += `  96,         // count (96 глифов диапазона 1)\n`;
+      header += `  0xA0,       // first2 (CP1251 160)\n`;
+      header += `  96          // count2 (96 глифов диапазона 2)\n`;
+      header += `};\n\n`;
+
+      header += `#endif /* _${arrName.toUpperCase()}_H_ */\n`;
+
+      return header;
+    }
+
+    function updateCppOutput() {
+      const output = document.getElementById('cppCodeOutput');
+      if (output) {
+        output.value = generateCppCode();
+      }
+    }
+
+    function copyFullCode() {
+      const code = generateCppCode();
+      navigator.clipboard.writeText(code).then(() => {
+        showToast('Полный C++ файл скопирован в буфер!');
+      }).catch(() => {
+        showToast('Не удалось скопировать', true);
+      });
+    }
+
+    function copyCurrentGlyphCode() {
+      const bytes = getCurrentGlyphBytes();
+      const meta = GLYPH_METAS[AppState.activeCharIndex];
+      const hexStr = bytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ');
+      const str = `// '${meta.char}' 0x${meta.code.toString(16).toUpperCase()} (${meta.code})\n${hexStr}`;
+      navigator.clipboard.writeText(str).then(() => {
+        showToast(`Байты символа '${meta.char}' скопированы!`);
+      });
+    }
+
+    function downloadHeaderFile() {
+      const code = generateCppCode();
+      const filename = AppState.fontMode === '7x11' ? 'font7x11_custom.h' : 'font5x7_custom.h';
+      const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`Файл ${filename} сохранен!`);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastMessage');
+      const toastText = document.getElementById('toastText');
+      if (!toast || !toastText) return;
+
+      toastText.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+    }
+
+    /* =====================================================================
+     * ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ
+     * ===================================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      initDefaultFontBuffers();
+      renderCharacterCards();
+      renderPixelGrid();
+      updateLivePreview();
+      updateCppOutput();
+
+      // Инициализация иконок Lucide
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    });
+  </script>
+</body>
+</html>
