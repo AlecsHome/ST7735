@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Font 7×11 Editor Pro — ST7735</title>
+<style>
+:root{--bg:#1a1a2e;--panel:#16213e;--border:#0f3460;--accent:#e94560;--cyan:#4fc3f7;--green:#4caf50;--orange:#ff9800;--text:#eee}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',monospace;background:var(--bg);color:var(--text);overflow:hidden;height:100vh;height:100dvh;display:flex;flex-direction:column}
+#top{display:flex;flex:1;min-height:300px;overflow:hidden}
+#sidebar{width:310px;background:var(--panel);border-right:2px solid var(--border);overflow-y:auto;padding:8px;flex-shrink:0}
+#main{flex:1;display:flex;gap:8px;padding:8px;overflow:hidden}
+#editor-col{display:flex;flex-direction:column;gap:8px;align-items:center}
+#tools-col{width:340px;background:var(--panel);border-radius:6px;padding:8px;overflow-y:auto;flex-shrink:0}
+#bottom{height:120px;min-height:80px;background:var(--panel);border-top:2px solid var(--border);padding:6px 8px;display:flex;gap:12px;align-items:stretch;flex-shrink:0}
+@media(max-height:700px){#bottom{height:80px;min-height:60px}#text-canvas{display:none}}
+@media(max-height:550px){#bottom{display:none}}
+@media(max-height:800px){#sidebar{width:260px}#tools-col{width:300px}h3{font-size:11px;margin:6px 0 3px}#glyph-map{grid-template-columns:repeat(24,1fr)}.gc{width:14px;height:14px;font-size:8px}}
+@media(max-width:1200px){#top{flex-direction:column}#sidebar{width:100%;max-height:200px}#tools-col{width:100%}}
+h3{font-size:12px;color:var(--cyan);margin:8px 0 4px;border-bottom:1px solid var(--border);padding-bottom:2px}
+button{background:var(--border);color:var(--text);border:1px solid #1a5276;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px;margin:1px}
+button:hover{background:#1a5276}
+button.active{background:var(--accent);border-color:var(--accent)}
+button.danger{background:#c0392b;border-color:#c0392b}
+select,input[type=text],textarea{background:#0a0a1a;color:var(--cyan);border:1px solid var(--border);font-family:monospace;font-size:11px;padding:3px;border-radius:3px}
+textarea{width:100%;resize:vertical}
+#glyph-map{display:grid;grid-template-columns:repeat(16,1fr);gap:1px;background:#0a0a1a}
+.gc{width:17px;height:17px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;border:1px solid transparent;background:var(--panel);position:relative}
+.gc:hover{border-color:var(--accent)}
+.gc.sel{background:var(--accent)}
+.gc.has{color:var(--cyan)}
+.gc.err{background:#4a1520;border-color:var(--accent)}
+.gc.err::after{content:'!';position:absolute;top:-2px;right:-1px;font-size:7px;color:var(--accent);font-weight:bold}
+.gc.diff{background:#3a3510;border-color:var(--orange)}
+#pixel-grid canvas{display:block;cursor:crosshair;image-rendering:pixelated}
+#info{background:var(--border);padding:6px;border-radius:4px;font-size:11px;line-height:1.5;margin-top:6px;width:100%}
+.check-item{padding:3px 4px;margin:2px 0;border-radius:3px;font-size:11px;cursor:pointer}
+.check-item.err{background:#3a1520;color:#ff6b6b}
+.check-item.warn{background:#3a3520;color:#ffd93d}
+.check-item.ok{background:#153a20;color:#6bff6b}
+#compare-panel{display:none}
+#text-preview-area{flex:1;display:flex;flex-direction:column;gap:4px}
+#text-input{width:100%;font-size:14px;padding:6px}
+#text-canvas{border:1px solid var(--border);background:#000;display:block}
+.toolbar{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:4px 0}
+.label{font-size:10px;color:#888}
+#status{position:fixed;bottom:2px;right:8px;font-size:10px;color:#666;z-index:99}
+.hex-view{font-size:10px;color:var(--cyan);word-break:break-all;background:#0a0a1a;padding:4px;border-radius:3px;min-height:30px}
+.range-sel{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#undo-info{font-size:10px;color:#888}
+</style>
+</head>
+<body>
+<div id="top">
+  <!-- ЛЕВАЯ ПАНЕЛЬ: карта глифов -->
+  <div id="sidebar">
+    <h3>Карта глифов (192: 0x20–0x7F + 0xA0–0xFF)</h3>
+    <div id="glyph-map"></div>
+    <h3>Данные глифа (11 байт, бит 0 = левый пиксель)</h3>
+    <div class="hex-view" id="hex-data"></div>
+    <h3>Импорт / Экспорт</h3>
+    <textarea id="import-area" rows="4" placeholder="Вставьте ПОЛНЫЙ .h файл (с шапкой, #ifndef, массивом) или только массив..."></textarea>
+    <div class="toolbar">
+      <button onclick="importFont()">Импорт из поля</button>
+      <button onclick="document.getElementById('file-input').click()">Загрузить .h файл</button>
+      <input type="file" id="file-input" accept=".h,.txt,.c" style="display:none" onchange="loadFontFile(event)">
+      <button onclick="exportFont()">Экспорт .h</button>
+      <button onclick="copyExport()">Копировать</button>
+      <button onclick="resetFont()">Сбросить шрифт</button>
+    </div>
+    <div id="undo-info"></div>
+  </div>
+
+  <!-- ЦЕНТР: пиксельный редактор -->
+  <div id="editor-col">
+    <div class="toolbar">
+      <button onclick="clearGlyph()">Очистить</button>
+      <button onclick="fillGlyph()">Залить</button>
+      <button onclick="invertGlyph()">Инверсия</button>
+      <button onclick="mirrorGlyph()">Зеркало ↔</button>
+      <button onclick="flipGlyph()">Зеркало ↕</button>
+      <span style="color:#555">|</span>
+      <button onclick="shiftGlyph(0,-1)">↑</button>
+      <button onclick="shiftGlyph(0,1)">↓</button>
+      <button onclick="shiftGlyph(-1,0)">←</button>
+      <button onclick="shiftGlyph(1,0)">→</button>
+      <span style="color:#555">|</span>
+      <button onclick="copyGlyph()">Копир</button>
+      <button onclick="pasteGlyph()">Встав</button>
+      <span style="color:#555">|</span>
+      <button onclick="prevGlyph()">◀</button>
+      <button onclick="nextGlyph()">▶</button>
+      <span style="color:#555">|</span>
+      <button onclick="undo()" id="btn-undo">↩ Undo</button>
+      <label class="label"><input type="checkbox" id="show-grid" checked onchange="drawEditor()"> Сетка</label>
+      <select id="grid-scale" onchange="drawEditor()">
+        <option value="20">20px</option>
+        <option value="28" selected>28px</option>
+        <option value="36">36px</option>
+        <option value="44">44px</option>
+      </select>
+    </div>
+    <canvas id="pixel-grid"></canvas>
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      <div>
+        <div class="label">Предпросмотр 1×:</div>
+        <canvas id="preview1" width="70" height="110" style="border:1px solid #333;background:#000"></canvas>
+      </div>
+      <div>
+        <div class="label">Предпросмотр 3×:</div>
+        <canvas id="preview3" width="210" height="330" style="border:1px solid #333;background:#000"></canvas>
+      </div>
+    </div>
+    <div id="info"></div>
+  </div>
+
+  <!-- ПРАВАЯ ПАНЕЛЬ: инструменты -->
+  <div id="tools-col">
+    <h3>🔍 Проверка горбатости</h3>
+    <div class="toolbar">
+      <button onclick="runChecks()" class="active">Запустить проверку</button>
+      <button onclick="autoFixAll()" style="background:#2d6a4f;border-color:#2d6a4f">⚙ Авто-исправить всё</button>
+      <button onclick="autoFixGlyph(currentGlyph)">Исправить текущий</button>
+      <button onclick="clearChecks()">Очистить</button>
+    </div>
+    <div id="check-results" style="max-height:200px;overflow-y:auto"></div>
+
+    <h3>🔀 Сравнение двух версий</h3>
+    <div class="toolbar">
+      <button onclick="loadCompareFont()">Загрузить 2-й шрифт</button>
+      <button onclick="toggleCompare()" id="btn-compare">Показать различия</button>
+      <button onclick="clearCompare()">Сбросить</button>
+    </div>
+    <textarea id="compare-area" rows="3" placeholder="Вставьте 2-й массив для сравнения..." style="display:none"></textarea>
+    <div id="compare-panel">
+      <div id="compare-info" style="font-size:11px;color:var(--orange)"></div>
+      <canvas id="compare-canvas" width="200" height="130" style="border:1px solid #333;background:#000;margin-top:4px"></canvas>
+    </div>
+
+    <h3>⚡ Массовые операции</h3>
+    <div class="range-sel">
+      <label class="label">Диапазон:</label>
+      <select id="mass-range">
+        <option value="all">Все 192 глифа</option>
+        <option value="ascii">ASCII 0x20–0x7F</option>
+        <option value="cyrillic">Кириллица 0xC0–0xFF</option>
+        <option value="cyr_upper">Заглавные А–Я (0xC0–0xDF)</option>
+        <option value="cyr_lower">Строчные а–я (0xE0–0xFF)</option>
+        <option value="digits">Цифры 0–9 (0x30–0x39)</option>
+        <option value="custom">Пользовательский...</option>
+      </select>
+    </div>
+    <div class="range-sel" id="custom-range" style="display:none">
+      <label class="label">С:</label><input type="text" id="mass-from" value="0xC0" size="5">
+      <label class="label">По:</label><input type="text" id="mass-to" value="0xFF" size="5">
+    </div>
+    <div class="toolbar">
+      <button onclick="massOp('clear')">Очистить</button>
+      <button onclick="massOp('invert')">Инверсия</button>
+      <button onclick="massOp('mirror')">Зеркало ↔</button>
+      <button onclick="massOp('flip')">Зеркало ↕</button>
+      <button onclick="massOp('shift_up')">Сдвиг ↑</button>
+      <button onclick="massOp('shift_down')">Сдвиг ↓</button>
+      <button onclick="massOp('shift_left')">Сдвиг ←</button>
+      <button onclick="massOp('shift_right')">Сдвиг →</button>
+    </div>
+  </div>
+</div>
+
+<!-- НИЖНЯЯ ПАНЕЛЬ: текстовый предпросмотр -->
+<div id="bottom">
+  <div id="text-preview-area">
+    <div class="toolbar">
+      <label class="label">Текст:</label>
+      <input type="text" id="text-input" value="Привет мир! ABCabc 0123456789" style="flex:1">
+      <label class="label">Масштаб:</label>
+      <select id="text-scale" onchange="drawTextPreview()">
+        <option value="1">1×</option>
+        <option value="2" selected>2×</option>
+        <option value="3">3×</option>
+        <option value="4">4×</option>
+      </select>
+      <label class="label">Цвет:</label>
+      <select id="text-color" onchange="drawTextPreview()">
+        <option value="#4fc3f7">Голубой</option>
+        <option value="#ffffff">Белый</option>
+        <option value="#4caf50">Зелёный</option>
+        <option value="#ff9800">Оранжевый</option>
+        <option value="#e94560">Красный</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto; overflow-y:hidden; flex:1; min-height:40px">
+      <canvas id="text-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="status">Font7×11 Editor Pro v2.0 | ST7735 row-major | bit0=left | 192 глифа × 11 байт</div>
+
+<script>
+// ==================== ДАННЫЕ ШРИФТА ====================
+const GLYPH_W = 7, GLYPH_H = 11, GLYPHS = 192, BYTES_PER_GLYPH = 11;
+let fontData = new Uint8Array(GLYPHS * BYTES_PER_GLYPH); // пустой по умолчанию
+
+// Полный шрифт из font7x11.h (192 глифа × 11 байт = 2112 байт) — загружается при старте
+const DEFAULT_FONT_HEX = `0000000000000000000000
+000c0c0c0c0c000c0c0000
+000a0a0a00000000000000
+0012127f12127f12120000
+041e25051e1424251e0400
+0023130804040219180000
+000e11110a042a112e0000
+0004040200000000000000
+0008040202020202040800
+0002040808080808040200
+000004150e150400000000
+00000004041f0404000000
+000000000000000c0c0402
+00000000001e0000000000
+000000000000000c0c0000
+0010100808040402020000
+001e2131292523211e0000
+00080c0a080808083e0000
+001e2120100804023f0000
+001e21201c2020211e0000
+0010181412113f10100000
+003f01011f2020211e0000
+001e21011f2121211e0000
+003f202010080404040000
+001e21211e2121211e0000
+001e21213e2020211e0000
+000000000c0c000c0c0000
+000000000c0c000c0c0402
+0000201008040810200000
+000000003e003e00000000
+0000020408100804020000
+001e212010080800080000
+001e213d35353d011e0000
+000c1221213f2121210000
+001f21211f2121211f0000
+001e2101010101211e0000
+000f1121212121110f0000
+003f01011f0101013f0000
+003f01011f010101010000
+001e2101013921211e0000
+002121213f212121210000
+000e0404040404040e0000
+00302020202021211e0000
+0021110907091121210000
+00010101010101013f0000
+0041635549414141410000
+0021232529312121210000
+001e2121212121211e0000
+001f2121211f0101010000
+001e2121212129112e0000
+001f2121211f0911210000
+001e21011e2020211e0000
+007f080808080808080000
+00212121212121211e0000
+0041412222141408080000
+0041414949555563410000
+002121120c0c1221210000
+0041412214080808080000
+003f2010080402013f0000
+000e020202020202020e00
+0002020404080810100000
+000e080808080808080e00
+000c122100000000000000
+000000000000000000007f
+0002040000000000000000
+0000001e203e21213e0000
+0001011d232121231d0000
+0000001e210101211e0000
+0020202e312121312e0000
+0000001e213f01211e0000
+000c12020f020202020000
+0000003e2121213e20211e
+0001011d23212121210000
+00040006040404040e0000
+0008000c08080808080906
+0001011109070911210000
+00060404040404040e0000
+0000003649494949490000
+0000001d23212121210000
+0000001e212121211e0000
+0000001d232121231d0101
+0000002e312121312e2020
+0000001d23010101010000
+0000003e011e20211e0000
+0000020f020202120c0000
+00000021212121312e0000
+000000212112120c0c0000
+0000004149495555220000
+00000021120c0c12210000
+000000212121213e20211e
+0000003f201008043f0000
+0018040404020404041800
+0004040404040404040400
+0006080808100808080600
+0000000026190000000000
+007f4141414141417f0000
+0000000000000000000000
+12212112120c0402010000
+00120c212112120c040201
+00302020202021211e0000
+000000211e121e21000000
+101f010101010101010000
+0004040400000404040000
+001e011e211e201e000000
+123f01011f0101013f0000
+003e5d4545455d413e0000
+001e21010f0101211e0000
+0000000024120912240000
+000000003f200000000000
+00000000001e0000000000
+003e5d555d4d55413e0000
+0a0e0404040404040e0000
+0006090906000000000000
+000004041f0404001f0000
+000e0404040404040e0000
+00040006040404040e0000
+0000101f01010101010000
+00000021212121312e0101
+003e2f2f2e141414140000
+000000000c0c0000000000
+0012001e213f01211e0000
+00695b6b0d0d0909090000
+0000001e210f01211e0000
+0000000012244824120000
+0008000c08080808080906
+001e21011e2020211e0000
+0000003e011e20211e0000
+000a0006040404040e0000
+000c1221213f2121210000
+001f01011f2121211f0000
+001f21211f2121211f0000
+003f210101010101010000
+001c2222222222227f4100
+003f01011f0101013f0000
+0049492a1c2a4949490000
+001e21201c2020211e0000
+0021312929252523210000
+0c21312929252523210000
+0021110907091121210000
+003c222222222222210000
+0041635549414141410000
+002121213f212121210000
+001e2121212121211e0000
+003f212121212121210000
+001f2121211f0101010000
+001e21010101010101211e
+007f080808080808080000
+002121120c040402010000
+00083e494949493e080000
+002121120c0c1221210000
+001111111111113f200000
+00212121213e2020200000
+00494949494949497f0000
+004949494949497f400000
+000302021e2222221e0000
+004141414f5151514f0000
+000101011f2121211f0000
+001e21213c2020211e0000
+0039454547454545390000
+003e21213e282422210000
+0000001e203e21213e0000
+001e01011f2121211e0000
+0000001f211f21211f0000
+0000001f01010101010000
+0000001c222222227f4100
+0000001e213f01211e0000
+00000049492a142a490000
+0000001e201c20211e0000
+0000002131292525230000
+000c002131292523210000
+0000002111070911210000
+0000001c12121212110000
+0000004163554941410000
+00000021213f2121210000
+0000001e212121211e0000
+0000003f21212121210000
+0000001d232121231d0101
+0000001e210101211e0000
+0000001f04040404040000
+0000002121120c04040201
+0000083e4949493e080000
+00000021120c0c12210000
+000000111111113f200000
+0000002121213e20200000
+00000049494949497f0000
+000000494949497f400000
+00000003021e22221e0000
+00000041414f51514f0000
+00000001011f21211f0000
+0000001e213c20211e0000
+0000003945474545390000
+0000003e213e2422210000`;
+let compareData = null; // второй шрифт для сравнения
+let compareMode = false;
+let currentGlyph = 0;
+let clipboard = new Uint8Array(BYTES_PER_GLYPH);
+let undoStack = [];
+const MAX_UNDO = 100;
+
+// Таблица CP1251 → Unicode для отображения символов
+function cp1251Char(code) {
+  if (code < 0x80) return String.fromCharCode(code);
+  if (code >= 0xC0 && code <= 0xFF) return String.fromCharCode(0x0410 + code - 0xC0);
+  const map = {0xA0:0x00A0,0xA1:0x040E,0xA2:0x045E,0xA3:0x0408,0xA4:0x00A4,0xA5:0x0490,
+    0xA6:0x00A6,0xA7:0x00A7,0xA8:0x0401,0xA9:0x00A9,0xAA:0x0404,0xAB:0x00AB,0xAC:0x00AC,
+    0xAD:0x00AD,0xAE:0x00AE,0xAF:0x0407,0xB0:0x00B0,0xB1:0x00B1,0xB2:0x0406,0xB3:0x0456,
+    0xB4:0x0491,0xB5:0x00B5,0xB6:0x00B6,0xB7:0x00B7,0xB8:0x0451,0xB9:0x2116,0xBA:0x0454,
+    0xBB:0x00BB,0xBC:0x0458,0xBD:0x0405,0xBE:0x0455,0xBF:0x0457};
+  return map[code] ? String.fromCharCode(map[code]) : '?';
+}
+
+function glyphIndexToCode(i) { return i < 96 ? 0x20 + i : 0xA0 + (i - 96); }
+function glyphCodeToIndex(c) { return c < 0x80 ? c - 0x20 : 96 + c - 0xA0; }
+
+// ==================== UNDO ====================
+function pushUndo() {
+  undoStack.push({ glyph: currentGlyph, data: fontData.slice(currentGlyph * BYTES_PER_GLYPH, (currentGlyph + 1) * BYTES_PER_GLYPH) });
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  updateUndoInfo();
+}
+function undo() {
+  if (!undoStack.length) return;
+  const s = undoStack.pop();
+  fontData.set(s.data, s.glyph * BYTES_PER_GLYPH);
+  if (s.glyph === currentGlyph) refresh();
+  else buildGlyphMap();
+  updateUndoInfo();
+}
+function updateUndoInfo() {
+  document.getElementById('undo-info').textContent = `Undo: ${undoStack.length} шагов`;
+}
+
+function resetFont() {
+    if (!confirm('Сбросить все изменения шрифта? Данные будут очищены.')) return;
+    fontData.fill(0);
+    undoStack = [];
+    buildGlyphMap();
+    selectGlyph(currentGlyph);
+    drawTextPreview();
+    alert('Шрифт сброшен. Загрузите файл заново через "Импорт .h".');
+}
+
+// ==================== КАРТА ГЛИФОВ ====================
+function buildGlyphMap() {
+  const map = document.getElementById('glyph-map');
+  map.innerHTML = '';
+  for (let i = 0; i < GLYPHS; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'gc';
+    cell.dataset.idx = i;
+    const code = glyphIndexToCode(i);
+    cell.textContent = cp1251Char(code);
+    cell.title = `0x${code.toString(16).toUpperCase()} (${code}) [idx=${i}]`;
+    cell.onclick = () => selectGlyph(i);
+    map.appendChild(cell);
+  }
+  updateGlyphMap();
+}
+
+function updateGlyphMap() {
+  const cells = document.querySelectorAll('.gc');
+  cells.forEach((cell, i) => {
+    cell.classList.toggle('sel', i === currentGlyph);
+    const off = i * BYTES_PER_GLYPH;
+    let has = false;
+    for (let b = 0; b < BYTES_PER_GLYPH; b++) if (fontData[off + b]) { has = true; break; }
+    cell.classList.toggle('has', has);
+    // Подсветка различий при сравнении
+    if (compareData && compareMode) {
+      let diff = false;
+      for (let b = 0; b < BYTES_PER_GLYPH; b++) {
+        if (fontData[off + b] !== compareData[off + b]) { diff = true; break; }
+      }
+      cell.classList.toggle('diff', diff);
+    } else {
+      cell.classList.remove('diff');
+    }
+  });
+}
+
+function selectGlyph(idx) {
+  currentGlyph = idx;
+  updateGlyphMap();
+  drawEditor();
+  drawPreviews();
+  updateInfo();
+  updateHex();
+  if (compareData && compareMode) drawCompare();
+  // Сброс подсветки ошибок
+  document.querySelectorAll('.gc.err').forEach(c => c.classList.remove('err'));
+}
+
+// ==================== РЕДАКТОР ====================
+function getGlyphData(idx) {
+  return fontData.slice(idx * BYTES_PER_GLYPH, (idx + 1) * BYTES_PER_GLYPH);
+}
+function setGlyphData(idx, data) {
+  fontData.set(data, idx * BYTES_PER_GLYPH);
+}
+
+function drawEditor() {
+  const canvas = document.getElementById('pixel-grid');
+  const cs = parseInt(document.getElementById('grid-scale').value);
+  const showGrid = document.getElementById('show-grid').checked;
+  canvas.width = GLYPH_W * cs + 1;
+  canvas.height = GLYPH_H * cs + 1;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const data = getGlyphData(currentGlyph);
+  for (let row = 0; row < GLYPH_H; row++) {
+    const byte = data[row];
+    for (let col = 0; col < GLYPH_W; col++) {
+      const bit = (byte >> col) & 1; // бит 0 = левый пиксель
+      let color = bit ? '#4fc3f7' : '#1a1a2e';
+      // При сравнении показываем изменения
+      if (compareData && compareMode) {
+        const cmpByte = compareData[currentGlyph * BYTES_PER_GLYPH + row];
+        const cmpBit = (cmpByte >> col) & 1;
+        if (bit !== cmpBit) {
+          color = bit ? '#4caf50' : '#e94560'; // зелёный = добавлен, красный = удалён
+        }
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(col * cs + 1, row * cs + 1, cs - 1, cs - 1);
+    }
+  }
+  if (showGrid) {
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= GLYPH_W; c++) {
+      ctx.beginPath(); ctx.moveTo(c * cs, 0); ctx.lineTo(c * cs, GLYPH_H * cs); ctx.stroke();
+    }
+    for (let r = 0; r <= GLYPH_H; r++) {
+      ctx.beginPath(); ctx.moveTo(0, r * cs); ctx.lineTo(GLYPH_W * cs, r * cs); ctx.stroke();
+    }
+    // Базовая линия (строка 8)
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(0, 9 * cs); ctx.lineTo(GLYPH_W * cs, 9 * cs); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// Клик по пикселю
+document.getElementById('pixel-grid').addEventListener('mousedown', function(e) {
+  const rect = this.getBoundingClientRect();
+  const cs = parseInt(document.getElementById('grid-scale').value);
+  const col = Math.floor((e.clientX - rect.left) / cs);
+  const row = Math.floor((e.clientY - rect.top) / cs);
+  if (col < 0 || col >= GLYPH_W || row < 0 || row >= GLYPH_H) return;
+  pushUndo();
+  const off = currentGlyph * BYTES_PER_GLYPH + row;
+  if (e.button === 0) fontData[off] ^= (1 << col); // toggle
+  else if (e.button === 2) fontData[off] &= ~(1 << col); // clear
+  drawEditor();
+  drawPreviews();
+  updateHex();
+  updateGlyphMap();
+  drawTextPreview();
+});
+document.getElementById('pixel-grid').addEventListener('contextmenu', e => e.preventDefault());
+
+// ==================== ПРЕДПРОСМОТР ====================
+function drawPreviews() {
+  const data = getGlyphData(currentGlyph);
+  // 1×
+  const c1 = document.getElementById('preview1');
+  const ctx1 = c1.getContext('2d');
+  ctx1.fillStyle = '#000'; ctx1.fillRect(0, 0, 70, 110);
+  ctx1.fillStyle = '#4fc3f7';
+  for (let r = 0; r < GLYPH_H; r++)
+    for (let c = 0; c < GLYPH_W; c++)
+      if ((data[r] >> c) & 1) ctx1.fillRect(c * 10, r * 10, 9, 9);
+  // 3×
+  const c3 = document.getElementById('preview3');
+  const ctx3 = c3.getContext('2d');
+  ctx3.fillStyle = '#000'; ctx3.fillRect(0, 0, 210, 330);
+  ctx3.fillStyle = '#4fc3f7';
+  for (let r = 0; r < GLYPH_H; r++)
+    for (let c = 0; c < GLYPH_W; c++)
+      if ((data[r] >> c) & 1) ctx3.fillRect(c * 30, r * 30, 28, 28);
+}
+
+function updateInfo() {
+  const code = glyphIndexToCode(currentGlyph);
+  const ch = cp1251Char(code);
+  const data = getGlyphData(currentGlyph);
+  let empty = true;
+  for (let i = 0; i < BYTES_PER_GLYPH; i++) if (data[i]) { empty = false; break; }
+  document.getElementById('info').innerHTML =
+    `<b>Индекс:</b> ${currentGlyph}/191 | <b>Код:</b> 0x${code.toString(16).toUpperCase()} (${code}) | ` +
+    `<b>Символ:</b> "${ch}" | <b>Статус:</b> ${empty ? '<span style="color:#e94560">пустой</span>' : '<span style="color:#4caf50">заполнен</span>'}`;
+}
+
+function updateHex() {
+  const data = getGlyphData(currentGlyph);
+  const s = Array.from(data).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ');
+  document.getElementById('hex-data').textContent = s;
+}
+
+// ==================== ОПЕРАЦИИ НАД ГЛИФОМ ====================
+function clearGlyph() {
+  pushUndo();
+  fontData.fill(0, currentGlyph * BYTES_PER_GLYPH, (currentGlyph + 1) * BYTES_PER_GLYPH);
+  refresh();
+}
+function fillGlyph() {
+  pushUndo();
+  fontData.fill(0x7F, currentGlyph * BYTES_PER_GLYPH, (currentGlyph + 1) * BYTES_PER_GLYPH);
+  refresh();
+}
+function invertGlyph() {
+  pushUndo();
+  const off = currentGlyph * BYTES_PER_GLYPH;
+  for (let i = 0; i < BYTES_PER_GLYPH; i++) fontData[off + i] ^= 0x7F;
+  refresh();
+}
+function mirrorGlyph() {
+  pushUndo();
+  const data = getGlyphData(currentGlyph);
+  const result = new Uint8Array(BYTES_PER_GLYPH);
+  for (let r = 0; r < GLYPH_H; r++) {
+    let mirrored = 0;
+    for (let c = 0; c < GLYPH_W; c++) {
+      if ((data[r] >> c) & 1) mirrored |= (1 << (GLYPH_W - 1 - c));
+    }
+    result[r] = mirrored;
+  }
+  setGlyphData(currentGlyph, result);
+  refresh();
+}
+function flipGlyph() {
+  pushUndo();
+  const data = getGlyphData(currentGlyph);
+  const result = new Uint8Array(BYTES_PER_GLYPH);
+  for (let r = 0; r < GLYPH_H; r++) result[r] = data[GLYPH_H - 1 - r];
+  setGlyphData(currentGlyph, result);
+  refresh();
+}
+function shiftGlyph(dx, dy) {
+  pushUndo();
+  const data = getGlyphData(currentGlyph);
+  const result = new Uint8Array(BYTES_PER_GLYPH);
+  for (let r = 0; r < GLYPH_H; r++) {
+    const srcRow = r - dy;
+    if (srcRow < 0 || srcRow >= GLYPH_H) continue;
+    let byte = data[srcRow];
+    if (dx > 0) byte = (byte << dx) & 0x7F;
+    else if (dx < 0) byte = byte >> (-dx);
+    result[r] = byte;
+  }
+  setGlyphData(currentGlyph, result);
+  refresh();
+}
+function copyGlyph() {
+  clipboard.set(getGlyphData(currentGlyph));
+}
+function pasteGlyph() {
+  pushUndo();
+  setGlyphData(currentGlyph, clipboard);
+  refresh();
+}
+function prevGlyph() { selectGlyph((currentGlyph + GLYPHS - 1) % GLYPHS); }
+function nextGlyph() { selectGlyph((currentGlyph + 1) % GLYPHS); }
+
+function refresh() {
+  drawEditor();
+  drawPreviews();
+  updateInfo();
+  updateHex();
+  updateGlyphMap();
+  drawTextPreview();
+}
+
+// ==================== ПРОВЕРКА ГОРБАТОСТИ ====================
+function getPixel(data, row, col) {
+  if (row < 0 || row >= GLYPH_H || col < 0 || col >= GLYPH_W) return 0;
+  return (data[row] >> col) & 1;
+}
+
+function checkGlyph(idx) {
+  const code = glyphIndexToCode(idx);
+  const ch = cp1251Char(code);
+  const data = getGlyphData(idx);
+  const issues = [];
+  const isPrintable = code >= 0x21 && code <= 0x7E || code >= 0xC0 && code <= 0xFF;
+
+  // 1. Пустой глиф для печатаемого символа
+  let empty = true;
+  for (let i = 0; i < BYTES_PER_GLYPH; i++) if (data[i]) { empty = false; break; }
+  if (empty && isPrintable && code !== 0x20) {
+    issues.push({ level: 'err', msg: `Пустой глиф для печатаемого символа "${ch}"` });
+  }
+  if (empty) return issues; // Дальше не проверяем пустые
+
+  // 2. Изолированные пиксели (шум/горбы)
+  let isolated = 0;
+  for (let r = 0; r < GLYPH_H; r++) {
+    for (let c = 0; c < GLYPH_W; c++) {
+      if (!getPixel(data, r, c)) continue;
+      let neighbors = 0;
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+          if (dr !== 0 || dc !== 0)
+            neighbors += getPixel(data, r + dr, c + dc);
+      if (neighbors === 0) isolated++;
+    }
+  }
+  if (isolated > 0) {
+    issues.push({ level: 'err', msg: `Изолированных пикселей (шум): ${isolated}` });
+  }
+
+  // 3. Проверка хвостов для Д, Ц, Щ, д, ц, щ
+  const tailChars = { 0xC4: 'Д', 0xD6: 'Ц', 0xD9: 'Щ', 0xE4: 'д', 0xF6: 'ц', 0xF9: 'щ' };
+  if (tailChars[code]) {
+    let hasTail = false;
+    for (let r = 9; r < GLYPH_H; r++) {
+      if (data[r] !== 0) hasTail = true;
+    }
+    if (!hasTail) {
+      issues.push({ level: 'warn', msg: `"${tailChars[code]}" не имеет хвоста на строках 9–10` });
+    }
+  }
+
+  // 4. Проверка базовой линии (буквы без хвостов не должны выходить за строку 8)
+  const noTailChars = new Set([0xC0,0xC1,0xC2,0xC3,0xC5,0xC7,0xC8,0xCA,0xCB,0xCC,0xCD,0xCE,0xCF,0xD0,0xD1,0xD2,0xD5,0xD7,0xD8]); // А Б В Г Е З И К Л М Н О П Р С Т Х Ч Ш
+  if (noTailChars.has(code)) {
+    for (let r = 9; r < GLYPH_H; r++) {
+      if (data[r] !== 0) {
+        issues.push({ level: 'warn', msg: `"${ch}" имеет пиксели ниже базовой линии (строка ${r})` });
+        break;
+      }
+    }
+  }
+
+  // 5. Проверка верхней границы (заглавные без надстрочных знаков не должны использовать строку 0)
+  const noTopChars = new Set([0xC0,0xC1,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xCA,0xCB,0xCC,0xCD,0xCE,0xCF,0xD0,0xD1,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xDB,0xDC,0xDD,0xDE,0xDF]);
+  if (noTopChars.has(code) && code !== 0xC9 && code !== 0xC4 && code !== 0xC6) { // Й, Д, Ж могут
+    if (data[0] !== 0) {
+      issues.push({ level: 'warn', msg: `"${ch}" использует строку 0 (надстрочная зона)` });
+    }
+  }
+
+  // 6. Проверка связности (все пиксели должны быть связаны)
+  let totalPixels = 0;
+  for (let r = 0; r < GLYPH_H; r++)
+    for (let c = 0; c < GLYPH_W; c++)
+      if (getPixel(data, r, c)) totalPixels++;
+
+  if (totalPixels > 0) {
+    // BFS для проверки связности
+    const visited = new Set();
+    let startR = -1, startC = -1;
+    outer:
+    for (let r = 0; r < GLYPH_H; r++)
+      for (let c = 0; c < GLYPH_W; c++)
+        if (getPixel(data, r, c)) { startR = r; startC = c; break outer; }
+
+    if (startR >= 0) {
+      const queue = [[startR, startC]];
+      visited.add(startR * GLYPH_W + startC);
+      while (queue.length > 0) {
+        const [r, c] = queue.shift();
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = r + dr, nc = c + dc;
+            if (nr < 0 || nr >= GLYPH_H || nc < 0 || nc >= GLYPH_W) continue;
+            const key = nr * GLYPH_W + nc;
+            if (!visited.has(key) && getPixel(data, nr, nc)) {
+              visited.add(key);
+              queue.push([nr, nc]);
+            }
+          }
+        }
+      }
+      if (visited.size !== totalPixels) {
+        issues.push({ level: 'warn', msg: `Несвязные части: ${totalPixels - visited.size} из ${totalPixels} пикселей` });
+      }
+    }
+  }
+
+  // 7. Проверка ширины (глиф не должен быть шире 7 пикселей — уже гарантировано форматом)
+  // 8. Проверка на «горбатость» — неожиданные выступы на краях
+  for (let r = 1; r < GLYPH_H - 1; r++) {
+    for (let c = 0; c < GLYPH_W; c++) {
+      if (!getPixel(data, r, c)) continue;
+      // Пиксель на краю строки, но не на краях соседних строк (выступ)
+      const above = getPixel(data, r - 1, c);
+      const below = getPixel(data, r + 1, c);
+      const left = getPixel(data, r, c - 1);
+      const right = getPixel(data, r, c + 1);
+      // Если пиксель одинокий по горизонтали и вертикали — возможный горб
+      if (!above && !below && !left && !right && totalPixels > 5) {
+        issues.push({ level: 'warn', msg: `Возможный "горб" на строке ${r}, колонке ${c}` });
+        break;
+      }
+    }
+  }
+
+  // 9. Специфические проверки для проблемных букв (Алекс Home исправления)
+  // Ф (0xD4, 0xF4) — должна быть симметричной (col 0 ↔ col 6, col 1 ↔ col 5, col 2 ↔ col 4)
+  if (code === 0xD4 || code === 0xF4) {
+    for (let r = 0; r < GLYPH_H; r++) {
+      const b = data[r];
+      // Отражение: col 0 ↔ col 6, col 1 ↔ col 5, col 2 ↔ col 4, col 3 = центр
+      const reflected = ((b & 1) << 6) | ((b & 2) << 4) | ((b & 4) << 2) | (b & 8) |
+                        ((b & 0x10) >> 2) | ((b & 0x20) >> 4) | ((b & 0x40) >> 6);
+      if (reflected !== b) {
+        issues.push({ level: 'warn', msg: `Ф несимметрична: строка ${r} (col 0↔6, 1↔5, 2↔4)` });
+        break;
+      }
+    }
+  }
+
+  // Д, Л (0xC4, 0xCB, 0xE4, 0xEB) — треугольная крыша (вершина в col 3)
+  if (code === 0xC4 || code === 0xCB || code === 0xE4 || code === 0xEB) {
+    // Для заглавных крыша в rows 1-3, для строчных в rows 3-5
+    const roofStart = (code < 0xE0) ? 1 : 3;
+    const apex = getPixel(data, roofStart, 3);
+    const leftDiag = getPixel(data, roofStart + 1, 2);
+    const rightDiag = getPixel(data, roofStart + 1, 4);
+    if (!apex || !leftDiag || !rightDiag) {
+      issues.push({ level: 'warn', msg: `Д/Л: треугольная крыша неполная (нет вершины col 3 или диагоналей)` });
+    }
+    // Стойки в col 0, 6 (симметрично)
+    if (code === 0xC4 || code === 0xCB) {
+      const hasLeftStile = getPixel(data, 4, 0);
+      const hasRightStile = getPixel(data, 4, 6);
+      if (!hasLeftStile || !hasRightStile) {
+        issues.push({ level: 'warn', msg: `Д/Л: стойки должны быть в col 0 и col 6 (симметрично)` });
+      }
+    }
+  }
+
+  // У (0xD3, 0xF3) — хвост дугой (не прямая 45°)
+  if (code === 0xD3 || code === 0xF3) {
+    // После схождения должна быть вертикаль (col 2) + диагональ (col 1 → col 0)
+    // Заглавная: rows 5-8, строчная: rows 7-10
+    const tailStart = (code < 0xE0) ? 5 : 7;
+    const v1 = getPixel(data, tailStart, 2);
+    const v2 = getPixel(data, tailStart + 1, 2);
+    const d1 = getPixel(data, tailStart + 2, 1);
+    const d2 = getPixel(data, tailStart + 3, 0);
+    if (!v1 || !v2) {
+      issues.push({ level: 'warn', msg: `У: хвост должен иметь вертикаль (2 строки col 2) — дуга` });
+    }
+    if (!d1 || !d2) {
+      issues.push({ level: 'warn', msg: `У: диагональ хвоста (col 1 → col 0) отсутствует` });
+    }
+  }
+
+  // Ц, Щ (0xD6, 0xD9, 0xF6, 0xF9) — компактные (стойки 6 строк, хвост в row 7-8)
+  if (code === 0xD6 || code === 0xD9) {
+    // Заглавные: основание должно быть в row 7 (не row 8), хвост в row 8
+    if (data[7] === 0 && data[8] !== 0) {
+      issues.push({ level: 'warn', msg: `Ц/Щ: основание в row 8 — старая форма. Должно быть в row 7 (компактнее)` });
+    }
+  }
+  if (code === 0xF6 || code === 0xF9) {
+    // Строчные: основание в row 7, хвост в row 8
+    if (data[7] === 0 && data[8] !== 0) {
+      issues.push({ level: 'warn', msg: `ц/щ: основание в row 8 — старая форма. Должно быть в row 7` });
+    }
+  }
+
+  // Ч (0xD7, 0xF7) — более круглая средняя часть (диагональ после полосы)
+  if (code === 0xD7 || code === 0xF7) {
+    // После полосы должен быть переход col 3 → col 4 → col 5 (дуга)
+    const barRow = (code < 0xE0) ? 3 : 5;
+    const center = getPixel(data, barRow + 1, 3);
+    const diag = getPixel(data, barRow + 2, 4);
+    if (!center) {
+      issues.push({ level: 'warn', msg: `Ч: нет перехода через центр (col 3) после полосы — форма "4"` });
+    }
+    if (!diag) {
+      issues.push({ level: 'warn', msg: `Ч: нет диагонали (col 4) — нет дуги` });
+    }
+  }
+
+  return issues;
+}
+
+function runChecks() {
+  const container = document.getElementById('check-results');
+  container.innerHTML = '';
+  let totalIssues = 0;
+  let errorGlyphs = new Set();
+
+  for (let i = 0; i < GLYPHS; i++) {
+    const issues = checkGlyph(i);
+    if (issues.length === 0) continue;
+    totalIssues += issues.length;
+    const code = glyphIndexToCode(i);
+    const ch = cp1251Char(code);
+    const hasErrors = issues.some(iss => iss.level === 'err');
+    if (hasErrors) errorGlyphs.add(i);
+
+    const header = document.createElement('div');
+    header.className = 'check-item ' + (hasErrors ? 'err' : 'warn');
+    header.innerHTML = `<b>0x${code.toString(16).toUpperCase()} "${ch}"</b> (idx ${i}):`;
+    header.onclick = () => selectGlyph(i);
+    container.appendChild(header);
+
+    issues.forEach(iss => {
+      const item = document.createElement('div');
+      item.className = 'check-item ' + iss.level;
+      item.textContent = '  • ' + iss.msg;
+      item.onclick = () => selectGlyph(i);
+      container.appendChild(item);
+    });
+  }
+
+  if (totalIssues === 0) {
+    const ok = document.createElement('div');
+    ok.className = 'check-item ok';
+    ok.textContent = '✅ Все глифы прошли проверку. Дефектов не обнаружено.';
+    container.appendChild(ok);
+  } else {
+    const summary = document.createElement('div');
+    summary.className = 'check-item ' + (errorGlyphs.size > 0 ? 'err' : 'warn');
+    summary.innerHTML = `<b>Итого: ${totalIssues} замечаний в ${errorGlyphs.size || 'нескольких'} глифах</b>`;
+    container.prepend(summary);
+  }
+
+  // Подсветка в карте глифов
+  document.querySelectorAll('.gc.err').forEach(c => c.classList.remove('err'));
+  errorGlyphs.forEach(i => {
+    const cell = document.querySelector(`.gc[data-idx="${i}"]`);
+    if (cell) cell.classList.add('err');
+  });
+}
+
+function clearChecks() {
+  document.getElementById('check-results').innerHTML = '';
+  document.querySelectorAll('.gc.err').forEach(c => c.classList.remove('err'));
+}
+
+// ==================== СРАВНЕНИЕ ДВУХ ВЕРСИЙ ====================
+function loadCompareFont() {
+  const area = document.getElementById('compare-area');
+  area.style.display = area.style.display === 'none' ? 'block' : 'none';
+  if (area.style.display !== 'none') {
+    area.focus();
+    return;
+  }
+  const text = area.value;
+  const matches = text.match(/0x[0-9a-fA-F]{2}/gi);
+  if (!matches || matches.length < GLYPHS * BYTES_PER_GLYPH) {
+    alert(`Найдено ${matches ? matches.length : 0} байт, нужно ${GLYPHS * BYTES_PER_GLYPH}`);
+    return;
+  }
+  compareData = new Uint8Array(GLYPHS * BYTES_PER_GLYPH);
+  for (let i = 0; i < GLYPHS * BYTES_PER_GLYPH; i++) {
+    compareData[i] = parseInt(matches[i], 16);
+  }
+  area.style.display = 'none';
+  updateGlyphMap();
+  document.getElementById('btn-compare').classList.add('active');
+  compareMode = true;
+  drawCompare();
+  updateCompareInfo();
+}
+
+function toggleCompare() {
+  if (!compareData) { alert('Сначала загрузите второй шрифт'); return; }
+  compareMode = !compareMode;
+  document.getElementById('btn-compare').classList.toggle('active', compareMode);
+  updateGlyphMap();
+  drawEditor();
+  drawCompare();
+}
+
+function clearCompare() {
+  compareData = null;
+  compareMode = false;
+  document.getElementById('btn-compare').classList.remove('active');
+  document.getElementById('compare-area').value = '';
+  document.getElementById('compare-area').style.display = 'none';
+  document.getElementById('compare-panel').style.display = 'none';
+  updateGlyphMap();
+  drawEditor();
+}
+
+function updateCompareInfo() {
+  if (!compareData) return;
+  let diffCount = 0;
+  for (let i = 0; i < GLYPHS; i++) {
+    const off = i * BYTES_PER_GLYPH;
+    for (let b = 0; b < BYTES_PER_GLYPH; b++) {
+      if (fontData[off + b] !== compareData[off + b]) { diffCount++; break; }
+    }
+  }
+  document.getElementById('compare-info').textContent =
+    `Различий: ${diffCount} из ${GLYPHS} глифов`;
+  document.getElementById('compare-panel').style.display = 'block';
+}
+
+function drawCompare() {
+  if (!compareData) return;
+  const canvas = document.getElementById('compare-canvas');
+  const ctx = canvas.getContext('2d');
+  const cs = 8; // размер пикселя
+  canvas.width = GLYPH_W * cs * 2 + 20;
+  canvas.height = GLYPH_H * cs;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const off = currentGlyph * BYTES_PER_GLYPH;
+  // Текущая версия (слева)
+  for (let r = 0; r < GLYPH_H; r++) {
+    for (let c = 0; c < GLYPH_W; c++) {
+      const bit = (fontData[off + r] >> c) & 1;
+      const cmpBit = (compareData[off + r] >> c) & 1;
+      if (bit) {
+        ctx.fillStyle = (bit !== cmpBit) ? '#4caf50' : '#4fc3f7';
+        ctx.fillRect(c * cs, r * cs, cs - 1, cs - 1);
+      }
+    }
+  }
+  // Сравниваемая версия (справа)
+  const xOff = GLYPH_W * cs + 20;
+  for (let r = 0; r < GLYPH_H; r++) {
+    for (let c = 0; c < GLYPH_W; c++) {
+      const bit = (compareData[off + r] >> c) & 1;
+      const curBit = (fontData[off + r] >> c) & 1;
+      if (bit) {
+        ctx.fillStyle = (bit !== curBit) ? '#e94560' : '#888';
+        ctx.fillRect(xOff + c * cs, r * cs, cs - 1, cs - 1);
+      }
+    }
+  }
+  // Подписи
+  ctx.fillStyle = '#888';
+  ctx.font = '10px monospace';
+  ctx.fillText('Текущий', 0, GLYPH_H * cs + 10);
+  ctx.fillText('Сравн.', xOff, GLYPH_H * cs + 10);
+}
+
+// ==================== МАССОВЫЕ ОПЕРАЦИИ ====================
+document.getElementById('mass-range').addEventListener('change', function() {
+  document.getElementById('custom-range').style.display =
+    this.value === 'custom' ? 'flex' : 'none';
+});
+
+function getMassRange() {
+  const sel = document.getElementById('mass-range').value;
+  switch (sel) {
+    case 'all': return [0, GLYPHS - 1];
+    case 'ascii': return [0, 95];
+    case 'cyrillic': return [160, 191]; // 0xC0-0xFF → индексы 96+(0xC0-0xA0)=128..191
+    case 'cyr_upper': return [128, 159]; // 0xC0-0xDF
+    case 'cyr_lower': return [160, 191]; // 0xE0-0xFF
+    case 'digits': return [16, 25]; // 0x30-0x39
+    case 'custom': {
+      const from = parseInt(document.getElementById('mass-from').value, 16);
+      const to = parseInt(document.getElementById('mass-to').value, 16);
+      const fi = Math.max(0, Math.min(GLYPHS - 1, glyphCodeToIndex(from)));
+      const ti = Math.max(0, Math.min(GLYPHS - 1, glyphCodeToIndex(to)));
+      return [Math.min(fi, ti), Math.max(fi, ti)];
+    }
+    default: return [0, GLYPHS - 1];
+  }
+}
+
+function massOp(op) {
+  const [from, to] = getMassRange();
+  const count = to - from + 1;
+  if (!confirm(`Применить "${op}" к глифам ${from}–${to} (${count} шт.)?`)) return;
+
+  // Сохраняем для undo (только текущий глиф)
+  pushUndo();
+
+  for (let i = from; i <= to; i++) {
+    const off = i * BYTES_PER_GLYPH;
+    switch (op) {
+      case 'clear':
+        fontData.fill(0, off, off + BYTES_PER_GLYPH);
+        break;
+      case 'invert':
+        for (let b = 0; b < BYTES_PER_GLYPH; b++) fontData[off + b] ^= 0x7F;
+        break;
+      case 'mirror': {
+        const tmp = new Uint8Array(BYTES_PER_GLYPH);
+        for (let r = 0; r < GLYPH_H; r++) {
+          let m = 0;
+          for (let c = 0; c < GLYPH_W; c++)
+            if ((fontData[off + r] >> c) & 1) m |= (1 << (GLYPH_W - 1 - c));
+          tmp[r] = m;
+        }
+        fontData.set(tmp, off);
+        break;
+      }
+      case 'flip': {
+        const tmp = new Uint8Array(BYTES_PER_GLYPH);
+        for (let r = 0; r < GLYPH_H; r++) tmp[r] = fontData[off + GLYPH_H - 1 - r];
+        fontData.set(tmp, off);
+        break;
+      }
+      case 'shift_up': case 'shift_down': case 'shift_left': case 'shift_right': {
+        const dx = op === 'shift_left' ? -1 : op === 'shift_right' ? 1 : 0;
+        const dy = op === 'shift_up' ? -1 : op === 'shift_down' ? 1 : 0;
+        const tmp = new Uint8Array(BYTES_PER_GLYPH);
+        for (let r = 0; r < GLYPH_H; r++) {
+          const srcRow = r - dy;
+          if (srcRow < 0 || srcRow >= GLYPH_H) continue;
+          let byte = fontData[off + srcRow];
+          if (dx > 0) byte = (byte << dx) & 0x7F;
+          else if (dx < 0) byte = byte >> (-dx);
+          tmp[r] = byte;
+        }
+        fontData.set(tmp, off);
+        break;
+      }
+    }
+  }
+  refresh();
+  alert(`Операция "${op}" применена к ${count} глифам`);
+}
+
+// ==================== ИМПОРТ / ЭКСПОРТ ====================
+// Глобальная переменная для хранения имени загруженного файла
+let loadedFileName = '';
+
+function loadFontFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    loadedFileName = file.name;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        let text = e.target.result;
+        // Удаляем BOM если есть
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+        // Вставляем в поле импорта для визуального контроля
+        document.getElementById('import-area').value = text;
+        // Парсим
+        importFontH();
+    };
+    reader.onerror = function() { alert('Ошибка чтения файла: ' + file.name); };
+    reader.readAsText(file);
+    // Сбрасываем input, чтобы можно было загрузить тот же файл повторно
+    event.target.value = '';
+}
+
+// Универсальный парсер: принимает ПОЛНЫЙ .h файл (с шапкой, #ifndef, массивом)
+// или только массив байтов. Надёжно извлекает 2112 байт, игнорируя шапку,
+// комментарии, BOM и препроцессорные директивы.
+//
+// Алгоритм (улучшенная версия от пользователя):
+//   1) Удаляем BOM
+//   2) Удаляем блочные /* ... */ и строчные // комментарии
+//   3) Удаляем директивы препроцессора (#if, #define, #include, #endif)
+//   4) Извлекаем содержимое массива между { и }
+//   5) В содержимом ищем строго 0xNN (с префиксом 0x) — не matched числа в шапке
+//   6) Маска & 0x7F — шрифт 7 пикселей, бит 7 не используется
+function parseFontFromText(text) {
+  if (!text || !text.trim()) {
+    alert('Пустое поле ввода');
+    return false;
+  }
+  // 1. BOM
+  text = text.replace(/^\uFEFF/, '');
+  // 2. Блочные комментарии
+  text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  // 3. Однострочные комментарии
+  text = text.replace(/\/\/[^\n]*/g, '');
+  // 4. Директивы препроцессора
+  text = text.replace(/^\s*#\s*\w+[^\n]*/gm, '');
+  // 5. Находим массив между { и }
+  const braceStart = text.indexOf('{');
+  const braceEnd = text.lastIndexOf('}');
+  if (braceStart === -1 || braceEnd === -1 || braceEnd <= braceStart) {
+    alert('Не найдены скобки { } массива данных.');
+    return false;
+  }
+  text = text.substring(braceStart + 1, braceEnd);
+  // 6. Извлекаем все hex-байты: сначала 0x?? (строго с префиксом)
+  let matches = text.match(/\b0x[0-9a-fA-F]{1,2}\b/g);
+  // Fallback: если 0xNN мало — пробуем формат без префикса (просто пары цифр)
+  if (!matches || matches.length < GLYPHS * BYTES_PER_GLYPH) {
+    matches = text.match(/\b[0-9a-fA-F]{2}\b/g);
+  }
+  if (!matches || matches.length < GLYPHS * BYTES_PER_GLYPH) {
+    alert(`Найдено ${matches ? matches.length : 0} байт, нужно ${GLYPHS * BYTES_PER_GLYPH} (192×11). Проверьте формат файла.`);
+    return false;
+  }
+  // 7. Загружаем данные (маска 7 бит — шрифт 7 пикселей)
+  for (let i = 0; i < GLYPHS * BYTES_PER_GLYPH; i++) {
+    fontData[i] = parseInt(matches[i], 16) & 0x7F;
+  }
+  return true;
+}
+
+// Обёртка для кнопки «Импорт из поля»
+function importFont() {
+  const text = document.getElementById('import-area').value;
+  if (!parseFontFromText(text)) return;
+  undoStack = [];
+  updateUndoInfo();
+  buildGlyphMap();
+  selectGlyph(currentGlyph);
+  drawTextPreview();
+  const name = loadedFileName || 'из поля импорта';
+  alert(`Шрифт загружен из "${name}": 192 глифа × 11 байт = 2112 байт.`);
+}
+
+// Обёртка для loadFontFile — вызывает parseFontFromText
+function importFontH() {
+  const text = document.getElementById('import-area').value;
+  if (!parseFontFromText(text)) return;
+  undoStack = [];
+  updateUndoInfo();
+  buildGlyphMap();
+  selectGlyph(currentGlyph);
+  drawTextPreview();
+}
+
+// ==================== ЭТАЛОННЫЕ ФОРМЫ БУКВ ====================
+// Для авто-исправления: предопределённые "правильные" формы проблемных букв.
+// Ключ — CP1251 код, значение — массив 11 байт.
+const REFERENCE_GLYPHS = {
+  0xC4: [0x00, 0x1c, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x7f, 0x41, 0x00],  // Д
+  0xE4: [0x00, 0x00, 0x00, 0x1c, 0x22, 0x22, 0x22, 0x22, 0x7f, 0x41, 0x00],  // д
+  0xCB: [0x00, 0x3c, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x21, 0x00, 0x00],  // Л
+  0xEB: [0x00, 0x00, 0x00, 0x1c, 0x12, 0x12, 0x12, 0x12, 0x11, 0x00, 0x00],  // л
+  0xD4: [0x00, 0x08, 0x3e, 0x49, 0x49, 0x49, 0x49, 0x3e, 0x08, 0x00, 0x00],  // Ф
+  0xF4: [0x00, 0x00, 0x08, 0x3e, 0x49, 0x49, 0x49, 0x3e, 0x08, 0x00, 0x00],  // ф
+  0xD3: [0x00, 0x21, 0x21, 0x12, 0x0c, 0x04, 0x04, 0x02, 0x01, 0x00, 0x00],  // У
+  0xF3: [0x00, 0x00, 0x00, 0x21, 0x21, 0x12, 0x0c, 0x04, 0x04, 0x02, 0x01],  // у
+  0xD6: [0x00, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x3f, 0x20, 0x00, 0x00],  // Ц
+  0xF6: [0x00, 0x00, 0x00, 0x11, 0x11, 0x11, 0x11, 0x3f, 0x20, 0x00, 0x00],  // ц
+  0xD9: [0x00, 0x49, 0x49, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x40, 0x00, 0x00],  // Щ
+  0xF9: [0x00, 0x00, 0x00, 0x49, 0x49, 0x49, 0x49, 0x7f, 0x40, 0x00, 0x00],  // щ
+  0xD7: [0x00, 0x21, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x20, 0x20, 0x00, 0x00],  // Ч
+  0xF7: [0x00, 0x00, 0x00, 0x21, 0x21, 0x21, 0x3e, 0x20, 0x20, 0x00, 0x00],  // ч
+};
+
+// ==================== АВТО-ИСПРАВЛЕНИЯ ====================
+
+// Авто-исправление одного глифа. Возвращает true, если что-то изменилось.
+function autoFixGlyph(idx) {
+  const code = glyphIndexToCode(idx);
+  const issues = checkGlyph(idx);
+  if (issues.length === 0) return false;
+
+  // Если есть эталонная форма — заменяем целиком
+  if (REFERENCE_GLYPHS[code]) {
+    pushUndo();
+    const ref = REFERENCE_GLYPHS[code];
+    const oldData = getGlyphData(idx);
+    // Сравниваем — вдруг уже совпадает
+    let same = true;
+    for (let i = 0; i < BYTES_PER_GLYPH; i++) {
+      if (oldData[i] !== ref[i]) { same = false; break; }
+    }
+    if (same) return false;
+    setGlyphData(idx, new Uint8Array(ref));
+    return true;
+  }
+
+  // Для остальных — мягкие исправления
+  let changed = false;
+  const data = getGlyphData(idx);
+
+  // Изолированные пиксели — удаляем (только если пиксель не имеет соседей вообще)
+  for (let r = 0; r < GLYPH_H; r++) {
+    for (let c = 0; c < GLYPH_W; c++) {
+      if (!getPixel(data, r, c)) continue;
+      let neighbors = 0;
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+          if (dr !== 0 || dc !== 0)
+            neighbors += getPixel(data, r + dr, c + dc);
+      if (neighbors === 0) {
+        if (!changed) pushUndo();
+        data[r] &= ~(1 << c);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) setGlyphData(idx, data);
+  return changed;
+}
+
+// Авто-исправление всех проблемных глифов
+function autoFixAll() {
+  let fixed = 0;
+  let scanned = 0;
+  const fixedList = [];
+
+  for (let i = 0; i < GLYPHS; i++) {
+    const issues = checkGlyph(i);
+    if (issues.length === 0) continue;
+    scanned++;
+    if (autoFixGlyph(i)) {
+      fixed++;
+      const code = glyphIndexToCode(i);
+      fixedList.push(`0x${code.toString(16).toUpperCase()} "${cp1251Char(code)}"`);
+    }
+  }
+
+  if (fixed === 0) {
+    alert(`Проверено ${scanned} глифов с замечаниями.\nНечего исправлять — либо уже исправлены, либо нет эталона.`);
+    return;
+  }
+
+  refresh();
+  runChecks(); // перепроверяем
+  alert(`Авто-исправлено: ${fixed} из ${scanned} проблемных глифов.\n` +
+        `Исправленные: ${fixedList.join(', ')}`);
+}
+
+function exportFont() {
+  let out = '/*\nfont7x11.h — шрифт 7x11, ASCII[0x20-0x7F] + CP1251[0xA0-0xFF] (192 глифа)\n';
+  out += 'Формат: row-major, 11 байт на глиф (байт = строка, бит 0 = ЛЕВЫЙ пиксель)\n';
+  out += 'Сгенерировано: Font7x11 Editor Pro\n*/\n';
+  out += '#ifndef FONT7X11_H\n#define FONT7X11_H\n\n';
+  out += '#if defined(__AVR__) || defined(ESP8266)\n#include <avr/pgmspace.h>\n#define FONT_PGM PROGMEM\n#else\n#define FONT_PGM\n#endif\n\n';
+  out += 'const unsigned char Font7x11[] FONT_PGM =\n{\n';
+
+  for (let g = 0; g < GLYPHS; g++) {
+    const off = g * BYTES_PER_GLYPH;
+    const code = glyphIndexToCode(g);
+    const ch = cp1251Char(code);
+    let line = '    ';  // 4 пробела отступа — совпадает с font7x11.h, удобно при diff
+    for (let b = 0; b < BYTES_PER_GLYPH; b++) {
+      line += '0x' + fontData[off + b].toString(16).padStart(2, '0');
+      if (b < BYTES_PER_GLYPH - 1) line += ', ';
+    }
+    line += `,   // ${ch} 0x${code.toString(16).toUpperCase()} ${code}`;
+    out += line + '\n';
+  }
+  out += '};\n#endif\n';
+
+  const blob = new Blob([out], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'font7x11.h';
+  a.click();
+}
+
+function copyExport() {
+  let out = '';
+  for (let g = 0; g < GLYPHS; g++) {
+    const off = g * BYTES_PER_GLYPH;
+    const code = glyphIndexToCode(g);
+    let line = '    ';  // 4 пробела отступа — совпадает с font7x11.h
+    for (let b = 0; b < BYTES_PER_GLYPH; b++) {
+      line += '0x' + fontData[off + b].toString(16).padStart(2, '0');
+      if (b < BYTES_PER_GLYPH - 1) line += ', ';
+    }
+    line += `,   // 0x${code.toString(16).toUpperCase()} ${code}`;
+    out += line + '\n';
+  }
+  navigator.clipboard.writeText(out).then(() => alert('Скопировано в буфер обмена'));
+}
+
+// ==================== ТЕКСТОВЫЙ ПРЕДПРОСМОТР ====================
+function drawTextPreview() {
+  const text = document.getElementById('text-input').value;
+  const scale = parseInt(document.getElementById('text-scale').value);
+  const color = document.getElementById('text-color').value;
+  const canvas = document.getElementById('text-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Пустая строка — маленький canvas с подсказкой (без return — фокус не теряется)
+  if (!text || !text.trim()) {
+    canvas.width = 300;
+    canvas.height = 40;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#555';
+    ctx.font = '12px monospace';
+    ctx.fillText('Введите текст для предпросмотра...', 10, 25);
+    return;
+  }
+
+  // Рассчитываем размер — canvas в натуральном размере, прокрутка через overflow-x родителя
+  const charW = (GLYPH_W + 1) * scale;
+  const totalW = text.length * charW;
+  canvas.width = Math.max(totalW + 10, 100);
+  canvas.height = GLYPH_H * scale + 6;
+  // CSS ширина = натуральная — не растягиваем, прокрутка через родительский div
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = color;
+
+  // Поднимаем текст вверх — y_offset = 2 вместо 5, чтобы при x1/x2
+  // текст не уходил за нижний край панели (140px высоты)
+  const yOffset = (scale >= 3) ? 5 : 2;  // x1/x2: поднято вверх (y=2), x3/x4: нормально (y=5)
+  let x = 5;
+  for (const char of text) {
+    const codePoint = char.codePointAt(0);
+    // Преобразуем Unicode в CP1251
+    let cp1251Code;
+    if (codePoint < 0x80) cp1251Code = codePoint;
+    else if (codePoint >= 0x0410 && codePoint <= 0x044F) cp1251Code = codePoint - 0x0410 + 0xC0;
+    else if (codePoint === 0x0401) cp1251Code = 0xA8;
+    else if (codePoint === 0x0451) cp1251Code = 0xB8;
+    else cp1251Code = 0x3F; // '?'
+
+    if (cp1251Code >= 0x20 && cp1251Code <= 0xFF) {
+      const idx = glyphCodeToIndex(cp1251Code);
+      if (idx >= 0 && idx < GLYPHS) {
+        const data = getGlyphData(idx);
+        for (let r = 0; r < GLYPH_H; r++) {
+          for (let c = 0; c < GLYPH_W; c++) {
+            if ((data[r] >> c) & 1) {
+              ctx.fillRect(x + c * scale, yOffset + r * scale, scale, scale);
+            }
+          }
+        }
+      }
+    }
+    x += charW;
+  }
+}
+
+document.getElementById('text-input').addEventListener('input', drawTextPreview);
+
+// ==================== ГОРЯЧИЕ КЛАВИШИ ====================
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case 'ArrowLeft': prevGlyph(); e.preventDefault(); break;
+    case 'ArrowRight': nextGlyph(); e.preventDefault(); break;
+    case 'Delete': clearGlyph(); break;
+    case 'z': if (e.ctrlKey) { undo(); e.preventDefault(); } break;
+    case 'c': if (e.ctrlKey) { copyGlyph(); e.preventDefault(); } break;
+    case 'v': if (e.ctrlKey) { pasteGlyph(); e.preventDefault(); } break;
+  }
+});
+
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+// Загружаем полный шрифт из DEFAULT_FONT_HEX
+(function loadDefaultFont() {
+  const hex = DEFAULT_FONT_HEX.replace(/[\s\n]/g, '');
+  if (hex.length >= 4224) {
+    for (let i = 0; i < GLYPHS * BYTES_PER_GLYPH; i++) {
+      fontData[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+  }
+})();
+buildGlyphMap();
+selectGlyph(0);
+drawTextPreview();
+</script>
+</body>
+</html>

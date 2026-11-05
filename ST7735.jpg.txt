@@ -1,0 +1,102 @@
+Схема подключения дисплея к Arduino
+
+Ниже таблица, в которой описано к каким выводам Ардуино подключать дисплей.
+ LCD 	Arduino
+1 GND 	GND
+2 VCC 	VCC
+3 SCK 	13
+4 SDA 	11
+5 RES 	9    RST
+6 RS 	8    DC
+7 CS 	10
+8 LEDA 	3.3V подсветка
+
+ Вначале немного полезной информации, которая позволит вам хотя бы отчасти понять какие выводы 
+и за что отвечают на панельке дисплея.
+
+• SCK, MOSI – линии протокола SPI. Альтернативные названия – DO/DI, SCL/SDA. Вывод MISO отсутствует.
+• CS – выбор чипа. Активный уровень низкий.
+• DC – выбор типа записываемого в модуль слова – данные или команда. Возможны и иные обозначения этого вывода – A0, RS.
+• RESET – аппаратный сброс. В состав команд ST7735 входит команда программного сброса, так что на этом выводе можно сэкономить. Однако, следует иметь в виду, что для некоторых регистров контроллера значения по аппаратному и программному сбросу не совпадают.
+• VCC, GND – линии питания контроллера. Диапазон напряжения – от 3.3В до 5В.
+• LED (или BL, BLK) – питание дисплея. Максимально допустимое значение подаваемого на этот вывод напряжения – 3.3 В. 
+
+
+ST7735 TFT SPI display pins for Arduino Uno/Nano:
+
+ * LED =   3.3V
+ * SCK =   13
+ * SDA =   11    MOSI
+ * A0 =    8
+ * RESET = 9
+ * CS =    10    CS & DC
+ * GND =   GND
+ * VCC =   5V
+
+Hardware SPI Pins:
+ * Arduino Uno   SCK=13, SDA=11
+ * Arduino Nano  SCK=13, SDA=11
+ * Arduino Due   SCK=76, SDA=75
+ * Arduino Mega  SCK=52, SDA=51
+
+SPI pin names can be confusing. These are the alternative names for the SPI pins:
+MOSI = DIN = R/W = SDO = DI = SI = MTSR = SDA = D1 = SDI         11
+CS = CE = RS = SS                                                10
+DC = A0 = DO = DOUT = SO = MRST = RS                              9
+RESET = RST = RES                                                 8
+SCLK = CLK = E = SCK = SCL = D0                                  13
+
+#define TFT_CS     10
+#define TFT_RST    9  // you can also connect this to the Arduino reset
+                      // in which case, set this #define pin to 0!
+#define TFT_DC     8
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_RST);
+
+// Option 2: use any pins but a little slower!
+
+#define TFT_SCLK 13   // set these to be whatever pins you like!
+#define TFT_MOSI 11   // set these to be whatever pins you like!
+//Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+ 
+ SCK, MOSI – линии протокола SPI. Альтернативные названия – DO/DI, SCL/SDA. Вывод MISO отсутствует.
+
+• CS – выбор чипа. Активный уровень низкий.
+• DC – выбор типа записываемого в модуль слова – данные или команда. Возможны и иные обозначения этого вывода – A0, RS.
+• RESET – аппаратный сброс. В состав команд ST7735 входит команда программного сброса, так что на этом выводе можно сэкономить. Однако, следует иметь в виду, что для некоторых регистров контроллера значения по аппаратному и программному сбросу не совпадают.
+• VCC, GND – линии питания контроллера. Диапазон напряжения – от 3.3В до 5В.
+• LED (или BL) – питание дисплея. Максимально допустимое значение подаваемого на этот вывод напряжения – 3.3 В. 
+В последних модификациях обычно имеется преобразователь 5В –> 3.3 В. 
+Если вы обнаружили его на оборотной стороне своего модуля, можно соединить между собой выводы LED и VCC 
+и подавать любое из указанного диапазона удобное для вас напряжение.
+
+Если весь проект на C — добавьте маленький мост lcd_c.cpp:
+#include "st7735.h"
+static ST7735 lcd;
+extern "C" {
+  void lcd_begin(void) { lcd.begin(); }
+  void lcd_fill(uint16_t c) { lcd.fillScreen(c); }
+  // ...остальные нужные функции
+}
+
+Как переносить остальные функции из вашего STM32-драйвера
+Вся графика у вас остаётся без изменений — меняются только «железные» вызовы:
+
+Было (STM32 HAL)			Стало (Arduino)
+
+HAL_GPIO_WritePin(GPIOx, pin, ...)	digitalWrite(pin, ...)
+HAL_SPI_Transmit(&hspi1, buf, n, t)	st7735_spi_write(buf, n) / SPI.transfer(b)
+HAL_Delay(ms)				delay(ms)
+задержки в мкс				delayMicroseconds(us)
+ваш CS_LOW()/CS_HIGH()			lcd.startWrite() / lcd.endWrite()
+
+Шрифт, drawCircle, drawBitmap и т.п. переносятся как есть — им нужны только drawPixel/fillRect/writePixels.
+
+Подгонка под конкретный экземпляр (важно для ST7735!)
+Модули 160x128 бывают с разной «плёнкой», и от этого зависят смещения/инверсия:
+
+Картинка сдвинута на 1–2 пикселя или край «заворачивается» > tft.setOffsets(2, 1); после begin() (или передать ST7735_TAB_GREEN в конструктор).
+Цвета как негатив > tft.invertDisplay(true);
+Красный и синий поменялись > в st7735.h замените ST7735_MADCTL_COLOR 0x08 на 0x00.
+Белый экран / мусор > уменьшите частоту: tft.begin(16000000); проверьте DC и CS.
+Маркировка «K» обычно соответствует «чёрному» варианту — он и стоит по умолчанию (смещения 0).
+
