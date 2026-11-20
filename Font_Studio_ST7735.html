@@ -846,6 +846,114 @@
       font-weight: 600;
     }
 
+    /* Array Name Input (C++ export box) */
+    .array-name-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .array-name-input {
+      flex: 1;
+      min-width: 140px;
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: 6px 10px;
+      font-family: var(--font-label);
+      font-size: 0.85rem;
+      color: var(--on-surface);
+      transition: border-color var(--dur-micro) var(--ease-out);
+    }
+
+    .array-name-input:focus {
+      border-color: var(--primary);
+      outline: none;
+    }
+
+    /* Load Font Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      padding: var(--space-md);
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: var(--panel-gradient);
+      border: var(--hairline-strong);
+      border-radius: var(--rounded-lg);
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-md) var(--space-lg);
+      border-bottom: var(--hairline);
+    }
+
+    .modal-title {
+      font-family: var(--font-headline);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--on-surface);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-close-btn {
+      background: transparent;
+      border: none;
+      color: var(--on-surface-variant);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: var(--rounded-sm);
+      transition: all var(--dur-micro) var(--ease-out);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-close-btn:hover {
+      color: var(--on-surface);
+      background: var(--surface-container-high);
+    }
+
+    .modal-body {
+      padding: var(--space-md) var(--space-lg);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: var(--space-md) var(--space-lg);
+      border-top: var(--hairline);
+    }
+
     /* Custom Scrollbars */
     ::-webkit-scrollbar {
       width: 6px;
@@ -893,7 +1001,10 @@
 
         <!-- Quick actions -->
         <div class="control-item" style="justify-content: flex-end;">
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-action" onclick="openLoadFontModal()" title="Загрузить шрифт из .h файла или буфера обмена">
+              <i data-lucide="upload" style="width: 15px; height: 15px;"></i> Загрузить шрифт
+            </button>
             <button class="btn-action" onclick="resetCurrentFont()" title="Восстановить заводской шрифт">
               <i data-lucide="rotate-ccw" style="width: 15px; height: 15px;"></i> Сброс
             </button>
@@ -902,6 +1013,9 @@
             </button>
           </div>
         </div>
+
+        <!-- Hidden file input for loading .h font files -->
+        <input type="file" id="fontFileInput" accept=".h,.hpp,.txt" style="display:none" onchange="handleFontFileSelect(event)">
       </div>
     </header>
 
@@ -1127,6 +1241,12 @@
             <span class="badge badge-primary" id="exportFormatBadge">font7x11.h</span>
           </div>
 
+          <!-- Configurable array identifier -->
+          <div class="array-name-row">
+            <label for="arrayNameInput" class="control-label">Имя массива:</label>
+            <input type="text" id="arrayNameInput" class="array-name-input" value="Font7x11" spellcheck="false" autocomplete="off" oninput="onArrayNameInput(event)">
+          </div>
+
           <div class="code-area-wrapper">
             <textarea id="cppCodeOutput" class="code-output" readonly></textarea>
           </div>
@@ -1146,6 +1266,49 @@
 
     <!-- State Persistence Shim -->
     <api-shim></api-shim>
+
+    <!-- Load Font Modal -->
+    <div id="loadFontModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="loadFontModalTitle">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title" id="loadFontModalTitle">
+            <i data-lucide="upload" style="width: 18px; height: 18px; color: var(--primary);"></i>
+            Загрузить шрифт
+          </h3>
+          <button class="modal-close-btn" onclick="closeLoadFontModal()" title="Закрыть (Esc)" aria-label="Закрыть">
+            <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="callout-info">
+            Загрузите <strong>.h</strong> файл шрифта (например, <strong>font7x11.h</strong> или <strong>font5x7.h</strong>) или вставьте содержимое массива. Парсер извлечёт байты вида <strong>0xNN</strong>, определит формат (7×11 / 5×7) по имени и заполнит сетку.
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-action btn-primary" onclick="triggerFileInput()">
+              <i data-lucide="folder-open" style="width: 15px; height: 15px;"></i> Открыть .h файл…
+            </button>
+            <button class="btn-action" onclick="loadFontFromClipboard()" title="Вставить содержимое буфера обмена в поле ниже">
+              <i data-lucide="clipboard" style="width: 15px; height: 15px;"></i> Из буфера обмена
+            </button>
+          </div>
+          <div class="preview-input-label" style="margin-top: 4px;">
+            <span>Или вставьте текст массива вручную:</span>
+          </div>
+          <textarea id="fontPasteArea" class="preview-textarea" rows="10" spellcheck="false" style="font-family: var(--font-label); font-size: 0.78rem; min-height: 200px;" placeholder="// Вставьте сюда содержимое .h файла или массив байтов:
+// const unsigned char Font5x7[] FONT_PGM = {
+//   0x00, 0x00, 0x00, 0x00, 0x00,
+//   0x00, 0x00, 0x5f, 0x00, 0x00,
+//   ...
+// };"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-action" onclick="closeLoadFontModal()">Отмена</button>
+          <button class="btn-action btn-primary" onclick="loadFontFromPaste()">
+            <i data-lucide="check" style="width: 15px; height: 15px;"></i> Загрузить
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Toast Notification -->
     <div id="toastMessage" class="toast-msg">
@@ -1204,7 +1367,10 @@
       },
       modifiedGlyphs: new Set(),
       undoStack: [],
-      redoStack: []
+      redoStack: [],
+      // Configurable C++ array identifier per font mode
+      fontArrayName7x11: 'Font7x11',
+      fontArrayName5x7:  'Font5x7'
     };
 
     // Описания глифов: 192 штуки (0x20..0x7F = 96, 0xA0..0xFF = 96)
@@ -2203,6 +2369,9 @@
       if (btn5) btn5.classList.toggle('active', mode === '5x7');
       if (expBadge) expBadge.textContent = mode === '7x11' ? 'font7x11.h' : 'font5x7.h';
 
+      // Обновляем поле имени массива соответствующим значением для нового режима
+      updateArrayNameInput();
+
       AppState.undoStack = [];
       AppState.redoStack = [];
       updateUndoRedoButtons();
@@ -2353,8 +2522,7 @@
      * ===================================================================== */
     function generateCppCode() {
       const is7x11 = AppState.fontMode === '7x11';
-      const arrName = is7x11 ? 'Font7x11' : 'Font5x7';
-      const structName = is7x11 ? 'font7x11' : 'font5x7';
+      const arrName = getCurrentArrayName() || (is7x11 ? 'Font7x11' : 'Font5x7');
       const buffer = getCurrentFontBuffer();
 
       let header = `/* =====================================================================\n`;
@@ -2365,7 +2533,7 @@
       header += ` * ===================================================================== */\n\n`;
       header += `#ifndef _${arrName.toUpperCase()}_H_\n`;
       header += `#define _${arrName.toUpperCase()}_H_\n\n`;
-      header += `#if defined(AVR) || defined(ESP8266)\n`;
+      header += `#if defined(__AVR__) || defined(ESP8266)\n`;
       header += `  #include <avr/pgmspace.h>\n`;
       header += `  #define FONT_PGM PROGMEM\n`;
       header += `#else\n`;
@@ -2393,20 +2561,12 @@
       header += lines.join('\n');
       header += `\n};\n\n`;
 
-      // Дескриптор st7735_font_t
-      header += `/* Дескриптор шрифта для ST7735::setFont(&${structName}) */\n`;
-      header += `const st7735_font_t ${structName} = {\n`;
-      header += `  ${arrName},   // data (указатель на массив)\n`;
-      header += `  ${is7x11 ? 7 : 5},          // w (ширина клетки)\n`;
-      header += `  ${is7x11 ? 11 : 8},         // h (высота клетки)\n`;
-      header += `  1,          // bpc\n`;
-      header += `  ${is7x11 ? 1 : 0},          // flags: ${is7x11 ? '1 = row-major' : '0 = col-major'}\n`;
-      header += `  0x20,       // first (ASCII 32)\n`;
-      header += `  96,         // count (96 глифов диапазона 1)\n`;
-      header += `  0xA0,       // first2 (CP1251 160)\n`;
-      header += `  96          // count2 (96 глифов диапазона 2)\n`;
-      header += `};\n\n`;
-
+      // Дескриптор st7735_font_t НЕ включается в генерируемый заголовок.
+      // Тип st7735_font_t объявлен в st7735.h, который этот файл не подключает,
+      // поэтому включение дескриптора вызовет ошибку компиляции. Дескриптор
+      // следует объявить в основном исходнике проекта, который включает как
+      // st7735.h, так и этот заголовок шрифта, например:
+      //   const st7735_font_t myFont = { Font5x7, 5, 8, 1, 0, 0x20, 96, 0xA0, 96 };
       header += `#endif /* _${arrName.toUpperCase()}_H_ */\n`;
 
       return header;
@@ -2417,6 +2577,259 @@
       if (output) {
         output.value = generateCppCode();
       }
+    }
+
+    /* =====================================================================
+     * ИМЯ МАССИВА (C++ identifier) — редактируется пользователем
+     * ===================================================================== */
+    function getCurrentArrayName() {
+      return AppState.fontMode === '7x11'
+        ? AppState.fontArrayName7x11
+        : AppState.fontArrayName5x7;
+    }
+
+    function setCurrentArrayName(name) {
+      // Разрешаем только буквы, цифры и подчёркивание (C++ identifier)
+      const sanitized = String(name || '').trim().replace(/[^A-Za-z0-9_]/g, '');
+      const fallback = AppState.fontMode === '7x11' ? 'Font7x11' : 'Font5x7';
+      const finalName = sanitized.length > 0 ? sanitized : fallback;
+      if (AppState.fontMode === '7x11') {
+        AppState.fontArrayName7x11 = finalName;
+      } else {
+        AppState.fontArrayName5x7 = finalName;
+      }
+      return finalName;
+    }
+
+    function updateArrayNameInput() {
+      const input = document.getElementById('arrayNameInput');
+      if (input) {
+        input.value = getCurrentArrayName();
+      }
+    }
+
+    function onArrayNameInput(event) {
+      const finalName = setCurrentArrayName(event.target.value);
+      if (event.target.value !== finalName) {
+        event.target.value = finalName;
+      }
+      updateCppOutput();
+    }
+
+    /* =====================================================================
+     * ЗАГРУЗКА ШРИФТА ИЗ .h ФАЙЛА ИЛИ ИЗ БУФЕРА ОБМЕНА
+     * Парсер извлекает байты (0xNN / десятичные / 0bNN / 'c') из текста,
+     * автоматически определяет формат (7x11 vs 5x7) по имени/содержимому
+     * и заполняет активный буфер шрифта.
+     * ===================================================================== */
+    function openLoadFontModal() {
+      const modal = document.getElementById('loadFontModal');
+      if (!modal) return;
+      modal.classList.add('show');
+      const area = document.getElementById('fontPasteArea');
+      if (area) {
+        // Отложенный focus, чтобы не мешать отрисовке модалки
+        setTimeout(() => area.focus(), 50);
+      }
+    }
+
+    function closeLoadFontModal() {
+      const modal = document.getElementById('loadFontModal');
+      if (modal) modal.classList.remove('show');
+    }
+
+    function triggerFileInput() {
+      const input = document.getElementById('fontFileInput');
+      if (input) {
+        input.value = ''; // сброс, чтобы тот же файл можно было выбрать повторно
+        input.click();
+      }
+    }
+
+    function handleFontFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = String(e.target.result || '');
+        // Автоопределение формата: сначала по имени файла, потом по содержимому
+        const fileNameLower = file.name.toLowerCase();
+        if (/5x7|5\s*x\s*7/.test(fileNameLower)) {
+          if (AppState.fontMode !== '5x7') switchFontMode('5x7');
+        } else if (/7x11|7\s*x\s*11/.test(fileNameLower)) {
+          if (AppState.fontMode !== '7x11') switchFontMode('7x11');
+        } else {
+          detectAndSwitchModeFromText(text);
+        }
+        const ok = loadFontFromText(text);
+        if (ok) {
+          closeLoadFontModal();
+          showToast(`Шрифт загружен из файла: ${file.name}`);
+        }
+      };
+      reader.onerror = () => {
+        showToast('Ошибка чтения файла', true);
+      };
+      reader.readAsText(file);
+    }
+
+    function loadFontFromClipboard() {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        showToast('Буфер обмена недоступен в этом браузере. Вставьте вручную (Ctrl+V).', true);
+        const area = document.getElementById('fontPasteArea');
+        if (area) area.focus();
+        return;
+      }
+      navigator.clipboard.readText().then((text) => {
+        const area = document.getElementById('fontPasteArea');
+        if (area) {
+          area.value = text;
+          area.focus();
+        }
+        showToast('Текст из буфера вставлен в поле');
+      }).catch(() => {
+        showToast('Не удалось прочитать буфер обмена. Вставьте вручную (Ctrl+V).', true);
+        const area = document.getElementById('fontPasteArea');
+        if (area) area.focus();
+      });
+    }
+
+    function loadFontFromPaste() {
+      const area = document.getElementById('fontPasteArea');
+      if (!area) return;
+      const text = area.value || '';
+      if (!text.trim()) {
+        showToast('Поле ввода пусто', true);
+        return;
+      }
+      detectAndSwitchModeFromText(text);
+      const ok = loadFontFromText(text);
+      if (ok) {
+        closeLoadFontModal();
+        showToast('Шрифт загружен из вставленного текста');
+      }
+    }
+
+    function detectAndSwitchModeFromText(text) {
+      const hint7x11 = /7x11|7\s*x\s*11|font7x11/i.test(text);
+      const hint5x7  = /5x7|5\s*x\s*7|font5x7/i.test(text);
+      if (hint7x11 && !hint5x7 && AppState.fontMode !== '7x11') {
+        switchFontMode('7x11');
+      } else if (hint5x7 && !hint7x11 && AppState.fontMode !== '5x7') {
+        switchFontMode('5x7');
+      }
+    }
+
+    function loadFontFromText(text) {
+      const bytes = parseFontHexData(text);
+      if (bytes.length === 0) {
+        showToast('Не найдены байты шрифта (0xNN) в тексте', true);
+        return false;
+      }
+      return loadFontFromBytes(bytes);
+    }
+
+    /**
+     * Извлекает плоский список байт из текста заголовочного файла шрифта.
+     * Поддерживаемые литералы: 0xNN (hex), 0bNN (binary), 'c' (char), 0..255 (decimal).
+     * Комментарии (// и /* *\/) и идентификаторы C++ игнорируются.
+     * Если в тексте есть несколько {...} блоков (например, шрифт + дескриптор),
+     * извлекается только первый блок между '{' и '};'.
+     */
+    function parseFontHexData(text) {
+      if (!text) return [];
+
+      // 1. Удаляем блочные и строчные комментарии
+      let cleaned = text.replace(/\/\*[\s\S]*?\*\//g, ' ');
+      cleaned = cleaned.replace(/\/\/[^\n]*/g, ' ');
+
+      // 2. Извлекаем тело массива: от первой '{' до первой '};' после неё
+      let body = cleaned;
+      const openBrace = cleaned.indexOf('{');
+      if (openBrace !== -1) {
+        const closeIdx = cleaned.indexOf('};', openBrace);
+        if (closeIdx !== -1) {
+          body = cleaned.substring(openBrace + 1, closeIdx);
+        }
+      }
+
+      // 3. Извлекаем байт-литералы в порядке появления
+      const bytes = [];
+      // Порядок альтернатив важен: hex/binary пробуем раньше decimal.
+      // Decimal — третья capture-группа (m[3]); внутренности char-литерала
+      // не захватываем — char-литерал распознаём по m[0][0] === "'".
+      const tokenRegex = /0[xX]([0-9a-fA-F]{1,2})\b|0[bB]([01]{1,8})\b|\b(\d{1,3})\b|'(?:\\.|[^'])'/g;
+      let m;
+      while ((m = tokenRegex.exec(body)) !== null) {
+        let val = -1;
+        if (m[1] !== undefined) {
+          val = parseInt(m[1], 16);
+        } else if (m[2] !== undefined) {
+          val = parseInt(m[2], 2);
+        } else if (m[3] !== undefined) {
+          val = parseInt(m[3], 10);
+        } else if (m[0] && m[0].charAt(0) === "'") {
+          // Символьный литерал: 'A', '\n', '\\' и т.п.
+          const inner = m[0].slice(1, -1);
+          if (inner === '\\n') val = 10;
+          else if (inner === '\\t') val = 9;
+          else if (inner === '\\r') val = 13;
+          else if (inner === '\\0') val = 0;
+          else if (inner === '\\\\') val = 92;
+          else if (inner.length === 1) val = inner.charCodeAt(0);
+        }
+        if (val >= 0 && val <= 255) {
+          bytes.push(val);
+        }
+      }
+      return bytes;
+    }
+
+    function loadFontFromBytes(flatBytes) {
+      const is7x11 = AppState.fontMode === '7x11';
+      const bytesPerGlyph = is7x11 ? 11 : 5;
+      const expectedCount = 192;
+
+      if (flatBytes.length < bytesPerGlyph) {
+        showToast(`Слишком мало байтов: ${flatBytes.length} (нужно ≥ ${bytesPerGlyph})`, true);
+        return false;
+      }
+
+      const newFont = [];
+      for (let i = 0; i < expectedCount; i++) {
+        const glyphBytes = new Array(bytesPerGlyph).fill(0);
+        for (let b = 0; b < bytesPerGlyph; b++) {
+          const v = flatBytes[i * bytesPerGlyph + b];
+          if (v !== undefined && v >= 0 && v <= 255) {
+            glyphBytes[b] = v;
+          }
+        }
+        newFont.push(glyphBytes);
+      }
+
+      const actualGlyphCount = Math.floor(flatBytes.length / bytesPerGlyph);
+      if (actualGlyphCount < expectedCount) {
+        showToast(`Загружено ${actualGlyphCount} глифов из ${expectedCount} (недостающие дополнены нулями)`);
+      } else if (flatBytes.length % bytesPerGlyph !== 0) {
+        showToast(`Загружено ${actualGlyphCount} глифов + лишние ${flatBytes.length % bytesPerGlyph} байт проигнорированы`);
+      }
+
+      if (is7x11) {
+        font7x11Data = newFont;
+      } else {
+        font5x7Data = newFont;
+      }
+
+      AppState.modifiedGlyphs.clear();
+      AppState.undoStack = [];
+      AppState.redoStack = [];
+
+      renderPixelGrid();
+      renderCharacterCards();
+      updateLivePreview();
+      updateCppOutput();
+      updateUndoRedoButtons();
+      return true;
     }
 
     function copyFullCode() {
@@ -2472,12 +2885,38 @@
       initDefaultFontBuffers();
       renderCharacterCards();
       renderPixelGrid();
+      updateArrayNameInput();
       updateLivePreview();
       updateCppOutput();
 
       // Инициализация иконок Lucide
       if (window.lucide) {
         window.lucide.createIcons();
+      }
+    });
+
+    // Закрытие модалки загрузки шрифта по клавише Escape.
+    // Регистрируется отдельно от Ctrl+Z/Y обработчика, чтобы работать
+    // даже когда фокус находится в textarea внутри модалки.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('loadFontModal');
+        if (modal && modal.classList.contains('show')) {
+          closeLoadFontModal();
+          e.preventDefault();
+        }
+      }
+    });
+
+    // Закрытие модалки по клику на тёмный фон вокруг диалога
+    document.addEventListener('DOMContentLoaded', () => {
+      const modal = document.getElementById('loadFontModal');
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            closeLoadFontModal();
+          }
+        });
       }
     });
   </script>
