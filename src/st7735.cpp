@@ -75,13 +75,24 @@ void st7735_spi_write(const uint8_t *data, uint32_t len) {
     SPI.writeBytes((uint8_t *)data, len);
 #elif defined(__AVR__) && defined(SPDR) && defined(SPIF)
     /* По даташиту: SPIF сбрасывается последовательностью "чтение SPSR + доступ к SPDR".
-     * Очищаем возможный висящий SPIF перед началом, затем в цикле чтение SPSR в
-     * ожидании + следующая запись в SPDR автоматически очищают флаг. */
+     * Очищаем возможный висящий SPIF перед началом.
+     * v6.22: конвейер. При SPI2X (fosc/2) байт занимает 16 тактов; раньше
+     * декремент 32-битного счётчика и загрузка следующего байта шли ПОСЛЕ
+     * ожидания SPIF, пока шина простаивала (~28 тактов на байт). Теперь
+     * следующий байт читается из памяти, пока предыдущий ещё уходит; в SPDR он
+     * пишется сразу после SPIF (WCOL невозможен: запись только при SPIF=1).
+     * Последнее ожидание обязательно - CS нельзя поднимать до конца байта. */
+    if (!len) return;
     { volatile uint8_t s = SPSR; (void)s; volatile uint8_t d = SPDR; (void)d; }
-    while (len--) {
-        SPDR = *data++;
+    SPDR = *data++;
+    while (--len) {
+        uint8_t b = *data++;                  /* готовим следующий, пока уходит текущий */
         while (!(SPSR & (1 << SPIF)));
+        SPDR = b;
     }
+    while (!(SPSR & (1 << SPIF)));            /* дождаться последнего байта */
+#elif defined(__AVR__)
+    #error "st7735: на этом AVR нет SPDR/SPIF - нужен аппаратный SPI (SPI.h на AVR не подключается)"
 #else
     while (len--) SPI.transfer(*data++);
 #endif
@@ -120,28 +131,36 @@ static const uint8_t ST7735_PGM st7735_init[] = {
     Пины / сессия
    ===================================================================== */
 void ST7735::csLow(void) {
-#if defined(ST7735_PLAT_ARDUINO)
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+  if (_csPort) *_csPort &= (uint8_t)~_csMask;   /* v6.23: прямой порт */
+#elif defined(ST7735_PLAT_ARDUINO)
   if (_cs >= 0) digitalWrite(_cs, LOW);
 #else
   ST7735_CS_LOW();
 #endif
 }
 void ST7735::csHigh(void) {
-#if defined(ST7735_PLAT_ARDUINO)
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+  if (_csPort) *_csPort |= _csMask;   /* v6.23: прямой порт */
+#elif defined(ST7735_PLAT_ARDUINO)
   if (_cs >= 0) digitalWrite(_cs, HIGH);
 #else
   ST7735_CS_HIGH();
 #endif
 }
 void ST7735::dcLow(void) {
-#if defined(ST7735_PLAT_ARDUINO)
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+  if (_dcPort) *_dcPort &= (uint8_t)~_dcMask;   /* v6.23: прямой порт */
+#elif defined(ST7735_PLAT_ARDUINO)
   if (_dc >= 0) digitalWrite(_dc, LOW);
 #else
   ST7735_DC_LOW();
 #endif
 }
 void ST7735::dcHigh(void) {
-#if defined(ST7735_PLAT_ARDUINO)
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+  if (_dcPort) *_dcPort |= _dcMask;   /* v6.23: прямой порт */
+#elif defined(ST7735_PLAT_ARDUINO)
   if (_dc >= 0) digitalWrite(_dc, HIGH);
 #else
   ST7735_DC_HIGH();
@@ -163,7 +182,10 @@ void ST7735::rstHigh(void) {
 }
 void ST7735::startWrite(void) {
   if (_inWrite++ == 0) {
-#if defined(ST7735_PLAT_ARDUINO)
+    /* v6.19 AVR: настройки заданы один раз в begin() (mode0/MSB/fosc/2) -
+     * begin/endTransaction не нужны (SPI не используется в ISR - и защита
+     * от прерываний в beginTransaction тоже не нужна). */
+#if defined(ST7735_PLAT_ARDUINO) && !defined(__AVR__)
     SPI.beginTransaction(SPISettings(_spiHz, MSBFIRST, SPI_MODE0));
 #endif
     csLow();
@@ -173,7 +195,7 @@ void ST7735::endWrite(void) {
   if (_inWrite == 0) return;
   if (--_inWrite == 0) {
     csHigh();
-#if defined(ST7735_PLAT_ARDUINO)
+#if defined(ST7735_PLAT_ARDUINO) && !defined(__AVR__)
     SPI.endTransaction();
 #endif
   }
@@ -182,10 +204,16 @@ void ST7735::endWrite(void) {
     Инициализация
    ===================================================================== */
 ST7735::ST7735(int8_t cs, int8_t dc, int8_t rst, uint8_t tab)
-  : _cs(cs), _dc(dc), _rst(rst), _rotation(0),
+  : _cs(cs), _dc(dc), _rst(rst),
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+    _csPort(0), _csMask(0), _dcPort(0), _dcMask(0),
+#endif
+    _rotation(0),
     _width(128), _height(160),
     _colstart(0), _rowstart(0), _xoff(0), _yoff(0),
-    _spiHz(8000000UL),
+#if !defined(__AVR__)
+    _spiHz(8000000UL),                  /* v6.22: на AVR частота не хранится (fosc/2 в begin) */
+#endif
     _madctlRgb(ST7735_MADCTL_COLOR), _invertInit(false),
     _font(&font5x7), _textScale(1),
     _textFg(COLOR565_WHITE), _textBg(COLOR565_BLACK),
@@ -220,11 +248,39 @@ ST7735::ST7735(int8_t cs, int8_t dc, int8_t rst, uint8_t tab)
 
 void ST7735::begin(uint32_t spiHz) {
 #if defined(ST7735_PLAT_ARDUINO)
+#if defined(__AVR__)
+  (void)spiHz;                  /* v6.22: AVR всегда fosc/2 (SPI2X), поле _spiHz убрано */
+#else
   _spiHz = spiHz;
+#endif
   if (_cs  >= 0) pinMode(_cs,  OUTPUT);
   if (_dc  >= 0) pinMode(_dc,  OUTPUT);
   if (_rst >= 0) pinMode(_rst, OUTPUT);
+#if defined(__AVR__)
+  /* v6.23: адрес порта и маска CS/DC - один раз здесь, дальше csLow/dcLow
+   * превращаются в одну операцию над регистром. */
+  if (_cs >= 0) { _csPort = portOutputRegister(digitalPinToPort(_cs)); _csMask = digitalPinToBitMask(_cs); }
+  if (_dc >= 0) { _dcPort = portOutputRegister(digitalPinToPort(_dc)); _dcMask = digitalPinToBitMask(_dc); }
+#endif
+#if defined(__AVR__)
+  /* v6.19: ручной SPI - библиотека SPIClass тянула begin/beginTransaction/
+   * endTransaction + SPISettings и объект SPI ради одного slave (факт v6.19:
+   * минус 138 Б flash / 1 Б RAM - LTO уже выбрасывал незваные методы).
+   * Регистры: SS/MOSI/SCK - OUTPUT, SS HIGH ДО включения SPI (как
+   * делал SPI.begin()), затем SPCR = SPE|MSTR: mode0 (CPOL=0, CPHA=0),
+   * MSB first (DORD=0). SPSR = SPI2X => fosc/2 - РОВНО та же частота, что
+   * давала SPISettings(40 МГц) (на 16 МГц - 8 МГц; скорость экрана не меняется).
+   * st7735_spi_write и 16-битный путь уже работали на SPDR - не тронуты. */
+  pinMode(SS,   OUTPUT);            /* SS (D10 = TFT_CS) обязан быть OUTPUT (master) */
+  digitalWrite(SS, HIGH);           /* не выбран до конца инициализации */
+  pinMode(MOSI, OUTPUT);
+  pinMode(MISO, INPUT);             /* MISO — INPUT по умолчанию, но явно (как SPI.begin) */
+  pinMode(SCK,  OUTPUT);
+  SPCR = (1 << SPE) | (1 << MSTR);  /* enable, master; mode0/MSB */
+  SPSR = (1 << SPI2X);              /* fosc/2 = прежняя частота SPISettings(40 МГц) */
+#else
   SPI.begin();
+#endif
 #else
   (void)spiHz;    /* частота задаётся предделителем в CubeMX */
 #endif
@@ -310,10 +366,18 @@ void ST7735::writeColor(uint16_t color, uint32_t count) {
     const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)color;
     /* очистка возможного висящего SPIF: чтение SPSR + чтение SPDR */
     { volatile uint8_t s = SPSR; (void)s; volatile uint8_t d = SPDR; (void)d; }
-    while (count--) {
-        SPDR = hi; while (!(SPSR & (1 << SPIF)));
-        SPDR = lo; while (!(SPSR & (1 << SPIF)));
+    /* v6.22: конвейер - счётчик пикселей уменьшается, пока уходит байт, а не
+     * в паузе между байтами. Запись в SPDR - только после SPIF (нет WCOL),
+     * финальное ожидание сохранено (CS не поднимать до конца последнего байта). */
+    SPDR = hi;
+    for (;;) {
+        while (!(SPSR & (1 << SPIF)));
+        SPDR = lo;
+        if (--count == 0) break;
+        while (!(SPSR & (1 << SPIF)));
+        SPDR = hi;
     }
+    while (!(SPSR & (1 << SPIF)));
 }
 #else
 void ST7735::writeColor(uint16_t color, uint32_t count) {
@@ -1884,9 +1948,12 @@ static uint8_t st7735_rd_cont(const uint8_t *p) {
    4-байтовые (эмодзи) — вне CP1251, заменяются на '?'. */
 void ST7735::print(const __FlashStringHelper *ifs) {
   const uint8_t *p = (const uint8_t *)ifs;
+  startWrite();                         /* v6.22: одна сессия SPI на всю строку -
+                                           вложенные print() внутри становятся no-op,
+                                           CS не дёргается на каждый символ */
   for (;;) {
     uint8_t c = ST7735_RD8(p++);
-    if (!c) return;
+    if (!c) { endWrite(); return; }
 
     char buf[4];                        /* до 3 байт UTF-8 + NUL */
     buf[0] = (char)c;
@@ -1952,32 +2019,56 @@ uint16_t ST7735::lineHeight(uint8_t scale) const {
 
 /* Одна строка (\n и \r обрывают вывод). Область x..x+w, высота = textHeight():
  * поля слева и справа заливаются bg, так что старый текст стирается.
- * Если текст шире w — выравнивание влево, вывод прекращается на границе ячейки. */
+ * Если текст шире w — выравнивание влево, вывод прекращается на границе ячейки.
+ *
+ * Fix: глиф, у которого opaque-заливка pitch = (f->w+1)*scale выходит за xEnd,
+ * рисуется прозрачным режимом (fillRect glyphW + drawChar без bg), чтобы
+ * хвостовой зазор scale px не залезал поверх соседнего элемента. */
 void ST7735::drawStringAligned(const char *s, int16_t x, int16_t y, int16_t w,
                                uint8_t align, uint16_t fg, uint16_t bg, uint8_t scale) {
   const st7735_font_t *f = _font;
   if (!f || !s || w <= 0) return;
   scale = st7735_scale(f, scale);
-  int32_t cw = *s ? (int32_t)textWidth(s, scale) : 0;  /* Fix: убран + scale — пиксельная точность RIGHT */   /* ширина с хвостовым зазором */
+  int32_t cw = *s ? (int32_t)textWidth(s, scale) : 0;  /* без + scale — пиксельная точность RIGHT */
   int32_t off = 0;
   if (cw < w) {
     if (align == ST7735_ALIGN_CENTER)     off = (w - cw) / 2;
     else if (align == ST7735_ALIGN_RIGHT) off = w - cw;
   }
-  const int16_t h = (int16_t)(f->h * scale);
-  const int32_t xEnd = (int32_t)x + w;
+  const int16_t h      = (int16_t)(f->h * scale);
+  const int32_t xEnd   = (int32_t)x + w;
+  const int32_t glyphW = (int32_t)f->w * scale;
+  const int32_t pitch  = glyphW + (int32_t)scale;         /* (f->w + 1) * scale */
   int32_t cx = (int32_t)x + off;
 
   startWrite();
-  if (off > 0) fillRect(x, y, (int16_t)off, h, bg);
+  if (off > 0) fillRect(x, y, (int16_t)off, h, bg);       /* левое поле */
+
   const char *p = s;
   while (*p && cx < xEnd) {
-    uint16_t ch = st7735_next_char(p);
+    uint16_t ch = st7735_next_char(p);                    /* p продвигается вперёд */
     if (ch == '\n' || ch == '\r') break;
-    if (cx + (int32_t)f->w * scale > xEnd) break;  /* glyph width only, not pitch — последний символ влезает */
-    cx += drawChar((int16_t)cx, y, ch, fg, bg, scale);
+    if (cx + glyphW > xEnd) break;                        /* битмап не влезает */
+
+    if (cx + pitch > xEnd) {
+      /* Opaque-заливка pitch вылезла бы за xEnd на (cx+pitch-xEnd) пикселей.
+       * Прозрачный режим: bg только в пределах битмапа (glyphW), fg без bg.
+       * Хвостовой зазор scale px НЕ заливается — не выходит за границу. */
+      fillRect((int16_t)cx, y, (int16_t)glyphW, h, bg);
+      drawChar((int16_t)cx, y, ch, fg, scale);            /* transparent: 2-аргументный color */
+    } else {
+      drawChar((int16_t)cx, y, ch, fg, bg, scale);        /* opaque: bg + fg за один проход */
+    }
+    cx += pitch;
   }
-  if (cx < xEnd) fillRect((int16_t)cx, y, (int16_t)(xEnd - cx), h, bg);
+
+  /* Хвост: после прозрачного глифа cx = last + pitch > xEnd,
+   * visual end = cx - scale. Для RIGHT: visual end = xEnd → fill пустой.
+   * Для CENTER: заливаем правое поле [visual end, xEnd]. */
+  int32_t fillStart = (cx > xEnd) ? (cx - (int32_t)scale) : cx;
+  if (fillStart < xEnd)
+    fillRect((int16_t)fillStart, y, (int16_t)(xEnd - fillStart), h, bg);
+
   endWrite();
 }
 

@@ -566,7 +566,11 @@ public:
     }
 
     /* Число делений шкалы (0 = без риска/делений) */
-    void setTicks(uint8_t ticks) { _ticks = ticks; }
+    void setTicks(uint8_t ticks) {
+        if (_ticks == ticks) return;
+        _ticks = ticks;
+        _prevFillPix = -1;    /* форсировать перерисовку делений при следующем setValue() */
+    }
 
     /* Полная отрисовка рамки, делений и фона */
     void draw() {

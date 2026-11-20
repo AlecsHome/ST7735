@@ -7,8 +7,9 @@
  * перерисует свою область и затрёт результат. При активном терминале
  * используйте print()/println() (или выключите терминал). 
  *  ── ЗАНЯТЫЕ ПИНЫ Arduino Uno/Nano/Pro Mini (ATmega328) ─────────────
- *  Аппаратный SPI (управляется библиотекой SPI, в конструкторе НЕ
- *  указывается — на AVR он физически закреплён за ножками чипа):
+ *  Аппаратный SPI (на AVR с v6.19 настраивается регистрами в begin(),
+ *  библиотека SPI не используется; в конструкторе НЕ указывается —
+ *  на AVR он физически закреплён за ножками чипа):
  *      11  MOSI  ──┬── TFT SDA / MOSI / DIN
  *      13  SCK   ──┴── TFT SCK / CLK
  *      12  MISO  ──── TFT MISO (если есть; иначе свободен, но pinMode = INPUT)
@@ -227,14 +228,17 @@ inline size_t st7735_fmtDouble(double d, uint8_t digits, char *buf, size_t n) {
         double rem = d - (double)(unsigned long)d;
         while (digits--) {
             rem *= 10.0;
-            /* Truncate без epsilon: d += r выше уже сделал половинное
-             * округление (HALF-AWAY-FROM-ZERO), поэтому truncate даёт
-             * правильную цифру. +1e-9 не нужен и вреден — может дать
-             * ложный dg=10 → clamp 9, после rem -= 9 остаток ≈ 1.0,
-             * следующая итерация снова dg≈10 → clamp 9 — накопление
-             * ошибки в младших разрядах ("1.00" → "0.99").
-             * Safety `if (dg > 9)` оставляем на случай 9.999... IEEE-754. */
-            uint8_t dg = (uint8_t)rem;
+            /* Эпсилон 1e-9: на AVR (float) инертен — float не различает 1e-9 при
+             * значениях ~1.0, вывод идентичен с/без него (0 различий в тестах).
+             * На double (ESP32/STM32) — активен: rem *= 10 может дать 7.9999999999999982
+             * вместо 8.0, и 1e-9 вытолкнет в 8.0. Без него 0.375 → «0.37» вместо «0.38».
+             * 39 edge cases на double исправляются, 0 структурных дефектов на AVR.
+             *
+             * Реальный источник «не того последнего знака» на AVR — не здесь,
+             * а в d += r (0.005 в f32 непредставимо): 7.82% входов отклоняются
+             * на ±1 последнего разряда. Это свойство float32, не баг форматтера.
+             * Для измерительных задач используйте integer-форматтеры (как fmtVolts). */
+            uint8_t dg = (uint8_t)(rem + 1e-9);
             if (dg > 9) dg = 9;
             buf[i++] = (char)('0' + dg);
             rem -= dg;
@@ -274,7 +278,20 @@ extern const st7735_font_t font7x11;
 #if defined(ST7735_PLAT_ARDUINO)          /* ---------- Arduino ---------- */
 
   #include <Arduino.h>
-  #include <SPI.h>
+  /* v6.19: на AVR библиотека SPI.h не нужна - begin() сам настраивает регистры
+   * (см. st7735.cpp), а из линковки выпадает SPI.cpp/объект SPIClass.
+   * Не-AVR платформы и хост-тесты идут через библиотеку как раньше.
+   *
+   * ОГРАНИЧЕНИЕ AVR: драйвер напрямую пишет SPCR/SPSR и не вызывает
+   * SPI.beginTransaction()/endTransaction(). Это нормально для одного
+   * slave (ST7735). Если на той же шине другое устройство (SD-карта,
+   * SPI Flash) — драйвер будет менять общие настройки SPI без
+   * сохранения/восстановления. Для multi-slave на AVR верните SPI.h
+   * (уберите #if !defined(__AVR__) guard) и замените ручной SPCR/SPSR
+   * на SPI.begin() + beginTransaction в startWrite(). */
+  #if !defined(__AVR__)
+    #include <SPI.h>
+  #endif
 
   #define ST7735_DELAY_MS(ms)  delay(ms)
   void st7735_spi_write(const uint8_t *data, uint32_t len);   /* в .cpp */
@@ -596,12 +613,20 @@ private:
 #endif
 
     /* порядок полей = порядок в init-листе конструктора */
-    int16_t  _cs, _dc, _rst;
+    int8_t   _cs, _dc, _rst;                    /* v6.22: int8_t - как в конструкторе (-1 = нет) */
+#if defined(ST7735_PLAT_ARDUINO) && defined(__AVR__)
+    /* v6.23: прямой доступ к PORTx для CS/DC (вместо digitalWrite, ~3-5 мкс).
+     * Заполняется в begin(); 0 = пин не задан (-1). +6 Б RAM. */
+    volatile uint8_t *_csPort;  uint8_t _csMask;
+    volatile uint8_t *_dcPort;  uint8_t _dcMask;
+#endif
     uint8_t  _rotation;
     uint16_t _width, _height;
     uint8_t  _colstart, _rowstart;
     uint8_t  _xoff, _yoff;
-    uint32_t _spiHz;
+#if !defined(__AVR__)
+    uint32_t _spiHz;                            /* v6.22: на AVR не нужно (SPI2X в begin) */
+#endif
     uint8_t  _madctlRgb;
     bool     _invertInit;
 
@@ -621,15 +646,8 @@ private:
     int16_t  _termX, _termY, _termW, _termH;
     uint8_t  _termRow, _termCol;
     uint16_t _termBg;
-    int16_t  _termTfa;        /* TFA: физическая GRAM-строка начала области */
-    uint16_t _termVsa;        /* VSA: высота области прокрутки (строк GRAM) */
-    uint16_t _termVspOff;     /* текущий сдвиг VSP-TFA, 0..VSA-1 (в пикселях GRAM) */
-    uint16_t _termHwLineH;    /* lineH шрифта, под которую настроена область */
-    bool     _termHwReq;      /* запрос пользователя termHwScroll(true) */
-    bool     _termHwOn;       /* область настроена и активна */
-    /* ВНИМАНИЕ: направление VSP и формула termHwRowLine согласованы
-     * между собой, но требуют проверки на реальном железе. Семантика
-     * VSCSAD (строка на нижнем vs верхнем краю области) различается
-     * между даташитами ST7735 и реализациями. */
+    int16_t  _termTfa;
+    uint16_t _termVsa, _termVspOff, _termHwLineH;
+    bool     _termHwReq, _termHwOn;
 #endif
 };
